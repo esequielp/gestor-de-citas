@@ -1,13 +1,31 @@
+export interface Service {
+  id: string;
+  name: string;
+  description: string;
+  duration: number; // in minutes
+  price: number;
+  active: boolean;
+}
+
 export interface Branch {
   id: string;
   name: string;
   address: string;
   image: string;
+  serviceIds: string[]; // Services offered at this branch
+  lat: number;
+  lng: number;
 }
 
-export interface WorkingHours {
-  start: number; // 24h format, e.g., 8
-  end: number;   // 24h format, e.g., 17
+export interface TimeRange {
+  start: number; // e.g., 8
+  end: number;   // e.g., 12
+}
+
+export interface DaySchedule {
+  dayOfWeek: number; // 0 = Sunday, 1 = Monday, etc.
+  isWorkDay: boolean;
+  ranges: TimeRange[]; // List of working intervals, e.g., 8-12, 14-18
 }
 
 export interface Employee {
@@ -16,19 +34,27 @@ export interface Employee {
   branchId: string;
   role: string;
   avatar: string;
-  // Simplified schedule: works every day between these hours
-  schedule: WorkingHours;
-  // Days off (0 = Sunday, 1 = Monday, etc.)
-  daysOff: number[];
+  weeklySchedule: DaySchedule[]; 
+  serviceIds: string[]; // Services this employee can perform
+}
+
+export interface Client {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  createdAt: string;
 }
 
 export interface Appointment {
   id: string;
   branchId: string;
+  serviceId: string; // Linked service
   employeeId: string;
+  clientId: string; // Linked client
   date: string; // YYYY-MM-DD
   time: number; // Hour start, e.g., 9 for 09:00-10:00
-  clientName: string;
+  clientName: string; // Snapshot for display convenience
   status: 'confirmed' | 'cancelled';
   createdAt: string;
 }
