@@ -19,7 +19,7 @@ const App: React.FC = () => {
 
   const [view, setView] = useState<ViewState>(getInitialView);
 
-  // Handle browser history navigation (optional polish)
+  // Handle browser history navigation
   useEffect(() => {
     const handlePopState = () => {
       const params = new URLSearchParams(window.location.search);
@@ -33,9 +33,10 @@ const App: React.FC = () => {
   const handleGoHome = () => {
     // Clear URL params without refreshing
     try {
-      window.history.pushState({}, '', window.location.pathname);
+      const newUrl = window.location.pathname;
+      window.history.pushState({}, '', newUrl);
     } catch (e) {
-      console.warn("History pushState failed (likely running in restricted environment):", e);
+      console.warn("History pushState failed:", e);
     }
     setView('LANDING');
   };
