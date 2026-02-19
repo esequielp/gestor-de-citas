@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Calendar, MapPin, User, CheckCircle, AlertCircle, Sparkles, Navigation, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Calendar, MapPin, User, CheckCircle, AlertCircle, Sparkles, Navigation, ExternalLink, Scissors } from 'lucide-react';
 import { Branch, Employee, Service } from '../types';
 import { dataService } from '../services/dataService';
 import { HOURS_OF_OPERATION } from '../constants';
@@ -45,12 +45,13 @@ const RecenterAutomatically = ({ lat, lng }: { lat: number, lng: number }) => {
 
 const BookingWizard: React.FC<Props> = ({ onBack }) => {
   const [step, setStep] = useState<Step>(1);
-  const [branches, setBranches] = useState<Branch[]>([]);
+  const [allBranches, setAllBranches] = useState<Branch[]>([]);
+  const [filteredBranches, setFilteredBranches] = useState<(Branch & { distance?: number })[]>([]);
   
   // Selection State
-  const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
-  const [availableServices, setAvailableServices] = useState<Service[]>([]);
+  const [allServices, setAllServices] = useState<Service[]>([]);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
   
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<number | null>(null);
@@ -65,11 +66,12 @@ const BookingWizard: React.FC<Props> = ({ onBack }) => {
   // Geolocation State
   const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null);
   const [locationError, setLocationError] = useState<string>('');
-  const [branchesWithDistance, setBranchesWithDistance] = useState<(Branch & { distance?: number })[]>([]);
 
   // Initial Data Load
   useEffect(() => {
-    setBranches(dataService.getBranches());
+    setAllBranches(dataService.getBranches());
+    setAllServices(dataService.getServices().filter(s => s.active)); // Only active services
+    
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     setSelectedDate(tomorrow.toISOString().split('T')[0]);
@@ -85,7 +87,7 @@ const BookingWizard: React.FC<Props> = ({ onBack }) => {
             },
             (error) => {
                 console.warn("Geolocation denied or error", error);
-                setLocationError("No se pudo obtener tu ubicación. Mostrando todas las sucursales.");
+                setLocationError("No se pudo obtener tu ubicación.");
             }
         );
     } else {
@@ -93,10 +95,16 @@ const BookingWizard: React.FC<Props> = ({ onBack }) => {
     }
   }, []);
 
-  // Calculate distances when user location or branches change
+  // Update filtered branches based on selected service AND location
   useEffect(() => {
-    const allBranches = dataService.getBranches();
-    
+    let relevantBranches = allBranches;
+
+    // Filter by Service if selected
+    if (selectedService) {
+        relevantBranches = relevantBranches.filter(b => b.serviceIds.includes(selectedService.id));
+    }
+
+    // Calculate Distances
     if (userLocation) {
         const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
             const R = 6371; // km
@@ -109,29 +117,33 @@ const BookingWizard: React.FC<Props> = ({ onBack }) => {
             return R * c;
         };
 
-        const sorted = allBranches.map(b => ({
+        const sorted = relevantBranches.map(b => ({
             ...b,
             distance: calculateDistance(userLocation.lat, userLocation.lng, b.lat, b.lng)
         })).sort((a, b) => (a.distance || 0) - (b.distance || 0));
         
-        setBranchesWithDistance(sorted);
+        setFilteredBranches(sorted);
     } else {
-        setBranchesWithDistance(allBranches);
+        setFilteredBranches(relevantBranches);
     }
-  }, [userLocation]);
+  }, [selectedService, userLocation, allBranches]);
 
   // --- Handlers ---
 
-  const handleBranchSelect = (branch: Branch) => {
-    setSelectedBranch(branch);
-    // Load services for this branch
-    const services = dataService.getServicesByBranch(branch.id);
-    setAvailableServices(services);
+  const handleServiceSelect = (service: Service) => {
+    setSelectedService(service);
+    // Reset downstream selections
+    setSelectedBranch(null);
+    setSelectedTime(null);
+    setSelectedEmployee(null);
     setStep(2);
   };
 
-  const handleServiceSelect = (service: Service) => {
-    setSelectedService(service);
+  const handleBranchSelect = (branch: Branch) => {
+    setSelectedBranch(branch);
+    // Reset downstream selections
+    setSelectedTime(null);
+    setSelectedEmployee(null);
     setStep(3);
   };
 
@@ -177,7 +189,7 @@ const BookingWizard: React.FC<Props> = ({ onBack }) => {
   const handleFinalBooking = () => {
     if (!selectedBranch || !selectedEmployee || !selectedTime || !selectedService) return;
     
-    // Create or Get Client (to satisfy requirement "No appointment without client")
+    // Create or Get Client
     const client = dataService.getOrCreateClient(clientName, clientEmail, clientPhone);
 
     dataService.addAppointment({
@@ -196,142 +208,147 @@ const BookingWizard: React.FC<Props> = ({ onBack }) => {
 
   // --- Render Steps ---
 
+  // STEP 1: SERVICE SELECTION
   const renderStep1 = () => (
-    <div className="space-y-6 animate-fade-in flex flex-col h-full">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-800">Selecciona una Sucursal</h2>
-        {locationError && <span className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded-full">{locationError}</span>}
-      </div>
-
-      <div className="flex flex-col lg:flex-row gap-6 h-full">
-         {/* Map Section */}
-         <div className="w-full lg:w-1/2 h-64 lg:h-auto min-h-[300px] rounded-xl overflow-hidden shadow-sm border border-gray-200 relative z-0">
-             <MapContainer center={[6.17, -75.60]} zoom={12} scrollWheelZoom={false}>
-                <TileLayer
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />
-                
-                {/* User Location Marker */}
-                {userLocation && (
-                    <>
-                        <Marker position={[userLocation.lat, userLocation.lng]} icon={iconPerson}>
-                            <Popup>¡Estás aquí!</Popup>
-                        </Marker>
-                        <RecenterAutomatically lat={userLocation.lat} lng={userLocation.lng} />
-                    </>
-                )}
-
-                {/* Branch Markers */}
-                {branchesWithDistance.map(branch => (
-                    <Marker key={branch.id} position={[branch.lat, branch.lng]} icon={iconBranch}>
-                        <Popup>
-                            <div className="p-1">
-                                <strong className="block text-sm mb-1">{branch.name}</strong>
-                                <span className="text-xs text-gray-500 block mb-2">{branch.address}</span>
-                                <a 
-                                    href={`https://www.google.com/maps/search/?api=1&query=${branch.lat},${branch.lng}`} 
-                                    target="_blank" 
-                                    rel="noreferrer"
-                                    className="text-xs text-indigo-600 font-bold flex items-center gap-1 hover:underline"
-                                >
-                                    Ver en Google Maps <ExternalLink size={10} />
-                                </a>
-                                <button 
-                                    onClick={() => handleBranchSelect(branch)}
-                                    className="mt-2 w-full bg-indigo-600 text-white text-xs py-1 rounded hover:bg-indigo-700"
-                                >
-                                    Seleccionar
-                                </button>
-                            </div>
-                        </Popup>
-                    </Marker>
-                ))}
-             </MapContainer>
-         </div>
-
-         {/* List Section */}
-         <div className="w-full lg:w-1/2 space-y-4 overflow-y-auto max-h-[600px] pr-2">
-            {branchesWithDistance.map((branch) => (
-            <div 
-                key={branch.id}
-                onClick={() => handleBranchSelect(branch)}
-                className="group cursor-pointer bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-xl hover:border-indigo-500 transition-all overflow-hidden flex flex-row h-32"
-            >
-                <div className="w-32 bg-gray-200 relative shrink-0">
-                <img src={branch.image} alt={branch.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+    <div className="space-y-6 animate-fade-in">
+      <h2 className="text-2xl font-bold text-gray-800">¿Qué servicio necesitas?</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {allServices.map((service) => (
+          <div 
+            key={service.id}
+            onClick={() => handleServiceSelect(service)}
+            className="group cursor-pointer bg-white p-5 rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-indigo-500 transition-all flex justify-between items-center"
+          >
+              <div>
+                <h3 className="font-semibold text-gray-900 text-lg group-hover:text-indigo-600">{service.name}</h3>
+                <p className="text-gray-500 text-sm mt-1">{service.description}</p>
+                <div className="mt-2 flex items-center gap-3 text-sm">
+                  <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md font-medium">{service.duration} min</span>
+                  <span className="font-semibold text-gray-900">${service.price}</span>
                 </div>
-                <div className="p-4 flex flex-col justify-center flex-1">
-                <div className="flex justify-between items-start">
-                    <h3 className="font-semibold text-gray-900 group-hover:text-indigo-600 line-clamp-1">{branch.name}</h3>
-                    {branch.distance !== undefined && (
-                        <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0">
-                            <Navigation size={10} /> {branch.distance.toFixed(1)} km
-                        </span>
-                    )}
-                </div>
-                <div className="flex items-center text-gray-500 text-xs mt-1 mb-2">
-                    <MapPin className="w-3 h-3 mr-1" />
-                    <span className="line-clamp-1">{branch.address}</span>
-                </div>
-                <div className="flex gap-2 mt-auto">
-                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
-                        {branch.serviceIds.length} servicios
-                    </span>
-                    <a 
-                        href={`https://www.google.com/maps/search/?api=1&query=${branch.lat},${branch.lng}`} 
-                        target="_blank" 
-                        rel="noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-xs text-indigo-600 border border-indigo-100 px-2 py-1 rounded hover:bg-indigo-50 flex items-center gap-1"
-                    >
-                         Mapa <ExternalLink size={10}/>
-                    </a>
-                </div>
-                </div>
-            </div>
-            ))}
-         </div>
+              </div>
+              <div className="text-gray-300 group-hover:text-indigo-500">
+                <Scissors size={24} />
+              </div>
+          </div>
+        ))}
       </div>
     </div>
   );
 
+  // STEP 2: BRANCH SELECTION (Filtered by Service)
   const renderStep2 = () => (
-    <div className="space-y-6 animate-fade-in">
-      <h2 className="text-2xl font-bold text-gray-800">Selecciona un Servicio</h2>
-      {availableServices.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-xl shadow-sm">
-          <p className="text-gray-500">No hay servicios disponibles en esta sucursal.</p>
+    <div className="space-y-6 animate-fade-in flex flex-col h-full">
+      <div className="flex justify-between items-center">
+        <div>
+            <h2 className="text-2xl font-bold text-gray-800">Elige una Sucursal</h2>
+            <p className="text-gray-500 text-sm">Mostrando sedes con el servicio: <span className="font-semibold text-indigo-600">{selectedService?.name}</span></p>
         </div>
+        {locationError && <span className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded-full">{locationError}</span>}
+      </div>
+
+      {filteredBranches.length === 0 ? (
+          <div className="text-center py-12 bg-white rounded-xl shadow-sm border border-gray-200">
+             <AlertCircle className="w-12 h-12 text-orange-400 mx-auto mb-4" />
+             <h3 className="text-lg font-bold text-gray-800">Lo sentimos</h3>
+             <p className="text-gray-500">Este servicio no está disponible en ninguna sucursal actualmente.</p>
+             <Button variant="secondary" className="mt-4" onClick={() => setStep(1)}>Volver a Servicios</Button>
+          </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {availableServices.map((service) => (
-            <div 
-              key={service.id}
-              onClick={() => handleServiceSelect(service)}
-              className="group cursor-pointer bg-white p-5 rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-indigo-500 transition-all flex justify-between items-center"
-            >
-               <div>
-                 <h3 className="font-semibold text-gray-900 text-lg group-hover:text-indigo-600">{service.name}</h3>
-                 <p className="text-gray-500 text-sm mt-1">{service.description}</p>
-                 <div className="mt-2 flex items-center gap-3 text-sm">
-                   <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md font-medium">{service.duration} min</span>
-                   <span className="font-semibold text-gray-900">${service.price}</span>
-                 </div>
-               </div>
-               <div className="text-gray-300 group-hover:text-indigo-500">
-                 <Sparkles />
-               </div>
+        <div className="flex flex-col lg:flex-row gap-6 h-full">
+            {/* Map Section */}
+            <div className="w-full lg:w-1/2 h-64 lg:h-auto min-h-[300px] rounded-xl overflow-hidden shadow-sm border border-gray-200 relative z-0">
+                <MapContainer center={[6.17, -75.60]} zoom={12} scrollWheelZoom={false}>
+                    <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    />
+                    
+                    {/* User Location Marker */}
+                    {userLocation && (
+                        <>
+                            <Marker position={[userLocation.lat, userLocation.lng]} icon={iconPerson}>
+                                <Popup>¡Estás aquí!</Popup>
+                            </Marker>
+                            <RecenterAutomatically lat={userLocation.lat} lng={userLocation.lng} />
+                        </>
+                    )}
+
+                    {/* Branch Markers */}
+                    {filteredBranches.map(branch => (
+                        <Marker key={branch.id} position={[branch.lat, branch.lng]} icon={iconBranch}>
+                            <Popup>
+                                <div className="p-1">
+                                    <strong className="block text-sm mb-1">{branch.name}</strong>
+                                    <span className="text-xs text-gray-500 block mb-2">{branch.address}</span>
+                                    <button 
+                                        onClick={() => handleBranchSelect(branch)}
+                                        className="mt-2 w-full bg-indigo-600 text-white text-xs py-1 rounded hover:bg-indigo-700"
+                                    >
+                                        Seleccionar
+                                    </button>
+                                </div>
+                            </Popup>
+                        </Marker>
+                    ))}
+                </MapContainer>
             </div>
-          ))}
+
+            {/* List Section */}
+            <div className="w-full lg:w-1/2 space-y-4 overflow-y-auto max-h-[600px] pr-2">
+                {filteredBranches.map((branch) => (
+                <div 
+                    key={branch.id}
+                    onClick={() => handleBranchSelect(branch)}
+                    className="group cursor-pointer bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-xl hover:border-indigo-500 transition-all overflow-hidden flex flex-row h-32"
+                >
+                    <div className="w-32 bg-gray-200 relative shrink-0">
+                    <img src={branch.image} alt={branch.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                    </div>
+                    <div className="p-4 flex flex-col justify-center flex-1">
+                    <div className="flex justify-between items-start">
+                        <h3 className="font-semibold text-gray-900 group-hover:text-indigo-600 line-clamp-1">{branch.name}</h3>
+                        {branch.distance !== undefined && (
+                            <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0">
+                                <Navigation size={10} /> {branch.distance.toFixed(1)} km
+                            </span>
+                        )}
+                    </div>
+                    <div className="flex items-center text-gray-500 text-xs mt-1 mb-2">
+                        <MapPin className="w-3 h-3 mr-1" />
+                        <span className="line-clamp-1">{branch.address}</span>
+                    </div>
+                    <div className="flex gap-2 mt-auto">
+                        <a 
+                            href={`https://www.google.com/maps/search/?api=1&query=${branch.lat},${branch.lng}`} 
+                            target="_blank" 
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-xs text-indigo-600 border border-indigo-100 px-2 py-1 rounded hover:bg-indigo-50 flex items-center gap-1"
+                        >
+                            Mapa <ExternalLink size={10}/>
+                        </a>
+                        <span className="ml-auto text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded">Seleccionar &rarr;</span>
+                    </div>
+                    </div>
+                </div>
+                ))}
+            </div>
         </div>
       )}
     </div>
   );
 
+  // STEP 3: DATE & TIME
   const renderStep3 = () => (
     <div className="space-y-6 animate-fade-in">
-      <h2 className="text-2xl font-bold text-gray-800">Fecha y Hora</h2>
+      <div className="flex flex-col md:flex-row justify-between md:items-center gap-2">
+        <h2 className="text-2xl font-bold text-gray-800">Fecha y Hora</h2>
+        <div className="flex gap-2 text-sm text-gray-500">
+             <span className="bg-gray-100 px-2 py-1 rounded">{selectedService?.name}</span>
+             <span className="bg-gray-100 px-2 py-1 rounded">{selectedBranch?.name}</span>
+        </div>
+      </div>
       
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 space-y-6">
         <div>
@@ -394,6 +411,7 @@ const BookingWizard: React.FC<Props> = ({ onBack }) => {
     </div>
   );
 
+  // STEP 4: PROFESSIONAL
   const renderStep4 = () => {
     // Get employees filtered by branch AND service capability
     const eligibleEmployees = dataService.getEmployeesByBranch(selectedBranch!.id)
@@ -482,6 +500,7 @@ const BookingWizard: React.FC<Props> = ({ onBack }) => {
     );
   };
 
+  // STEP 5: CONFIRMATION
   const renderStep5 = () => (
     <div className="space-y-6 animate-fade-in max-w-lg mx-auto">
       <div className="text-center space-y-2">
@@ -492,13 +511,13 @@ const BookingWizard: React.FC<Props> = ({ onBack }) => {
       <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100 space-y-4">
         {/* Summary Info */}
         <div className="grid grid-cols-2 gap-4 text-sm pb-4 border-b border-gray-100">
+             <div>
+                 <p className="text-xs text-gray-500 uppercase font-bold">Servicio</p>
+                 <p className="font-medium text-gray-900">{selectedService?.name}</p>
+            </div>
             <div>
                  <p className="text-xs text-gray-500 uppercase font-bold">Sucursal</p>
                  <p className="font-medium text-gray-900">{selectedBranch?.name}</p>
-            </div>
-            <div>
-                 <p className="text-xs text-gray-500 uppercase font-bold">Servicio</p>
-                 <p className="font-medium text-gray-900">{selectedService?.name}</p>
             </div>
             <div>
                  <p className="text-xs text-gray-500 uppercase font-bold">Fecha/Hora</p>
@@ -560,12 +579,15 @@ const BookingWizard: React.FC<Props> = ({ onBack }) => {
             <button onClick={step === 1 ? onBack : () => setStep(prev => (prev - 1) as Step)} className="p-2 hover:bg-gray-100 rounded-full text-gray-600">
               <ArrowLeft size={20} />
             </button>
-            <h1 className="font-bold text-gray-800 text-lg">
-                {step === 1 && 'Ubicación'}
-                {step === 2 && 'Servicio'}
-                {step === 3 && 'Fecha'}
-                {step === 4 && 'Profesional'}
+            <h1 className="font-bold text-gray-800 text-lg hidden sm:block">
+                {step === 1 && 'Seleccionar Servicio'}
+                {step === 2 && 'Seleccionar Sucursal'}
+                {step === 3 && 'Seleccionar Fecha'}
+                {step === 4 && 'Seleccionar Profesional'}
                 {step === 5 && 'Confirmación'}
+            </h1>
+            <h1 className="font-bold text-gray-800 text-lg sm:hidden">
+               Paso {step} de 5
             </h1>
           </div>
           <div className="flex gap-1">
