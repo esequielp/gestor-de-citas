@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ViewState } from './types';
 import BookingWizard from './views/BookingWizard';
 import AdminDashboard from './views/AdminDashboard';
-import { Lock, Scissors } from 'lucide-react';
+import LandingPage from './views/LandingPage';
 import { Button } from './components/Button';
 
 const App: React.FC = () => {
@@ -43,49 +43,7 @@ const App: React.FC = () => {
   const renderView = () => {
     switch (view) {
       case 'LANDING':
-        return (
-          <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4 relative overflow-hidden">
-            {/* Background Decoration */}
-            <div className="absolute top-0 left-0 w-full h-64 bg-indigo-600 rounded-b-[50%] scale-x-150 z-0"></div>
-
-            <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center space-y-8 animate-fade-in-up z-10 relative mt-10">
-              <div className="space-y-2">
-                <div className="bg-white p-2 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 -mt-16 shadow-lg">
-                  <div className="bg-indigo-100 w-full h-full rounded-full flex items-center justify-center">
-                     <Scissors className="w-8 h-8 text-indigo-600" />
-                  </div>
-                </div>
-                <h1 className="text-3xl font-bold text-gray-900">Estilo & Clase</h1>
-                <p className="text-gray-500">Agenda tu próxima sesión de belleza con nosotros en segundos.</p>
-              </div>
-
-              <div className="space-y-4 pt-4">
-                <Button 
-                  fullWidth 
-                  variant="primary" 
-                  onClick={() => setView('BOOKING')}
-                  className="h-14 text-lg shadow-indigo-200"
-                >
-                  Reservar Cita Ahora
-                </Button>
-                
-                <p className="text-xs text-gray-400 pt-4">
-                  Horario de atención: Lun-Sáb 08:00 - 17:00
-                </p>
-              </div>
-            </div>
-
-            {/* Discreet Admin Footer */}
-            <div className="mt-12 z-10">
-               <button 
-                 onClick={() => setView('ADMIN_LOGIN')}
-                 className="text-gray-400 text-xs hover:text-indigo-600 flex items-center gap-1 transition-colors"
-               >
-                 <Lock className="w-3 h-3" /> Acceso Personal
-               </button>
-            </div>
-          </div>
-        );
+        return <LandingPage onNavigate={(target) => setView(target)} />;
       case 'BOOKING':
         return <BookingWizard onBack={handleGoHome} />;
       case 'ADMIN_LOGIN':

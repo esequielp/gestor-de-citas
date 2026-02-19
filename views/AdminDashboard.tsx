@@ -1,15 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar as CalendarIcon, Users, MapPin, LogOut, Clock, X, Link as LinkIcon, Plus, Trash2, CheckCircle, Sparkles, Scissors, Edit2, DollarSign, Activity, ChevronLeft, ChevronRight, List, User, Phone, Mail, History } from 'lucide-react';
+import { Calendar as CalendarIcon, Users, MapPin, LogOut, Clock, X, Link as LinkIcon, Plus, Trash2, CheckCircle, Sparkles, Scissors, Edit2, DollarSign, Activity, ChevronLeft, ChevronRight, List, User, Phone, Mail, History, LayoutDashboard, TrendingUp, AlertCircle, CalendarClock } from 'lucide-react';
 import { dataService } from '../services/dataService';
 import { Appointment, Branch, Employee, DaySchedule, TimeRange, Service, Client } from '../types';
 import { Button } from '../components/Button';
 import { HOURS_OF_OPERATION } from '../constants';
+// @ts-ignore
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+// @ts-ignore
+import L from 'leaflet';
 
 interface Props {
   onLogout: () => void;
 }
 
-type Tab = 'APPOINTMENTS' | 'CLIENTS' | 'EMPLOYEES' | 'BRANCHES' | 'SERVICES';
+type Tab = 'DASHBOARD' | 'APPOINTMENTS' | 'CLIENTS' | 'EMPLOYEES' | 'BRANCHES' | 'SERVICES';
 type ViewMode = 'LIST' | 'CALENDAR';
 
 const DAYS_OF_WEEK = [
@@ -22,8 +26,28 @@ const DAYS_OF_WEEK = [
   { id: 0, label: 'Dom', full: 'Domingo' },
 ];
 
+// Fix for default Leaflet icons
+const iconBranch = new L.Icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41]
+});
+
+// Component to handle map clicks and update coordinates
+const LocationPicker = ({ onLocationSelect, position }: { onLocationSelect: (lat: number, lng: number) => void, position: { lat: number, lng: number } | null }) => {
+    useMapEvents({
+        click(e) {
+            onLocationSelect(e.latlng.lat, e.latlng.lng);
+        },
+    });
+    return position ? <Marker position={[position.lat, position.lng]} icon={iconBranch} /> : null;
+};
+
 const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
-  const [activeTab, setActiveTab] = useState<Tab>('APPOINTMENTS');
+  const [activeTab, setActiveTab] = useState<Tab>('DASHBOARD');
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -256,12 +280,13 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
   // --- Renderers ---
 
   const renderSidebar = () => (
-    <div className="w-64 bg-slate-900 text-white min-h-screen flex flex-col hidden md:flex">
+    <div className="w-64 bg-slate-900 text-white min-h-screen flex flex-col hidden md:flex sticky top-0 h-screen">
       <div className="p-6 border-b border-slate-800">
         <h2 className="text-xl font-bold tracking-tight">GestorCitas Admin</h2>
       </div>
       <nav className="flex-1 p-4 space-y-2">
         {[
+            { id: 'DASHBOARD', icon: LayoutDashboard, label: 'Resumen' },
             { id: 'APPOINTMENTS', icon: CalendarIcon, label: 'Citas' },
             { id: 'CLIENTS', icon: Users, label: 'Clientes' },
             { id: 'SERVICES', icon: Scissors, label: 'Servicios' },
@@ -291,6 +316,178 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
       </div>
     </div>
   );
+
+  const renderOverview = () => {
+    // Metrics Calculation
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayAppointments = appointments.filter(a => a.date === todayStr && a.status === 'confirmed').length;
+    
+    // Weekly (Simple: appointments in the next 7 days including today)
+    const nextWeek = new Date();
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    const weeklyAppointments = appointments.filter(a => {
+        const d = new Date(a.date);
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        return d >= today && d <= nextWeek && a.status === 'confirmed';
+    }).length;
+
+    const pendingAppointments = appointments.filter(a => {
+        const d = new Date(a.date);
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        return d >= today && a.status === 'confirmed';
+    }).length;
+
+    const cancelledAppointments = appointments.filter(a => a.status === 'cancelled').length;
+
+    // Upcoming List (Top 5)
+    const upcomingList = appointments
+        .filter(a => {
+            const d = new Date(a.date);
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            return d >= today && a.status === 'confirmed';
+        })
+        .sort((a, b) => {
+            if (a.date !== b.date) return a.date.localeCompare(b.date);
+            return a.time - b.time;
+        })
+        .slice(0, 5);
+
+    const stats = [
+        { label: 'Citas Hoy', value: todayAppointments, icon: CalendarIcon, color: 'text-blue-600', bg: 'bg-blue-50' },
+        { label: 'Esta Semana', value: weeklyAppointments, icon: TrendingUp, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+        { label: 'Pendientes', value: pendingAppointments, icon: CalendarClock, color: 'text-orange-600', bg: 'bg-orange-50' },
+        { label: 'Canceladas', value: cancelledAppointments, icon: AlertCircle, color: 'text-red-600', bg: 'bg-red-50' },
+        { label: 'Clientes', value: clients.length, icon: Users, color: 'text-green-600', bg: 'bg-green-50' },
+        { label: 'Empleados', value: employees.length, icon: User, color: 'text-purple-600', bg: 'bg-purple-50' },
+    ];
+
+    return (
+        <div className="space-y-8 animate-fade-in">
+            <div className="flex flex-col gap-2">
+                <h2 className="text-2xl font-bold text-gray-800">Resumen del Negocio</h2>
+                <p className="text-gray-500">Vista general del estado de tus sucursales y citas.</p>
+            </div>
+
+            {/* KPI Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                {stats.map((stat, idx) => (
+                    <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center text-center gap-2 hover:shadow-md transition-shadow">
+                        <div className={`p-3 rounded-full ${stat.bg} ${stat.color}`}>
+                            <stat.icon size={20} />
+                        </div>
+                        <div>
+                            <span className="text-2xl font-bold text-gray-900 block">{stat.value}</span>
+                            <span className="text-xs text-gray-500 font-medium uppercase tracking-wide">{stat.label}</span>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            <div className="grid lg:grid-cols-3 gap-8">
+                {/* Upcoming Appointments */}
+                <div className="lg:col-span-2 space-y-4">
+                    <div className="flex justify-between items-center">
+                        <h3 className="text-lg font-bold text-gray-800">Próximas Citas</h3>
+                        <button onClick={() => setActiveTab('APPOINTMENTS')} className="text-sm text-indigo-600 hover:underline">Ver calendario completo</button>
+                    </div>
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                         {upcomingList.length === 0 ? (
+                             <div className="p-8 text-center text-gray-400">No hay citas próximas agendadas.</div>
+                         ) : (
+                            <table className="w-full text-left text-sm text-gray-600">
+                                <thead className="bg-gray-50 text-gray-800 uppercase text-xs font-semibold">
+                                    <tr>
+                                        <th className="px-6 py-3">Cliente</th>
+                                        <th className="px-6 py-3">Detalles</th>
+                                        <th className="px-6 py-3">Fecha</th>
+                                        <th className="px-6 py-3 text-right">Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {upcomingList.map(appt => {
+                                        const srv = services.find(s => s.id === appt.serviceId);
+                                        const emp = employees.find(e => e.id === appt.employeeId);
+                                        const br = branches.find(b => b.id === appt.branchId);
+                                        return (
+                                            <tr key={appt.id} className="hover:bg-gray-50">
+                                                <td className="px-6 py-3 font-medium text-gray-900">{appt.clientName}</td>
+                                                <td className="px-6 py-3">
+                                                    <div className="flex flex-col">
+                                                        <span className="text-indigo-600 font-medium">{srv?.name}</span>
+                                                        <span className="text-xs text-gray-500">{emp?.name} • {br?.name}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="bg-gray-100 px-2 py-1 rounded text-xs font-medium">{appt.date}</span>
+                                                        <span className="text-gray-900 font-bold">{appt.time}:00</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-3 text-right">
+                                                     <button 
+                                                        onClick={() => { setEditingAppointment(appt); }}
+                                                        className="text-gray-400 hover:text-indigo-600"
+                                                     >
+                                                         <Edit2 size={16} />
+                                                     </button>
+                                                </td>
+                                            </tr>
+                                        )
+                                    })}
+                                </tbody>
+                            </table>
+                         )}
+                    </div>
+                </div>
+
+                {/* Quick Actions */}
+                <div className="space-y-4">
+                    <h3 className="text-lg font-bold text-gray-800">Accesos Rápidos</h3>
+                    <div className="grid gap-3">
+                        <button 
+                            onClick={() => setEditingAppointment({
+                                branchId: branches[0]?.id || '',
+                                date: todayStr,
+                                time: 9
+                            })}
+                            className="flex items-center gap-4 p-4 bg-indigo-600 text-white rounded-xl shadow-md hover:bg-indigo-700 transition-all group"
+                        >
+                            <div className="bg-white/20 p-2 rounded-lg group-hover:bg-white/30 transition-colors">
+                                <Plus size={24}/>
+                            </div>
+                            <div className="text-left">
+                                <span className="block font-bold">Nueva Cita</span>
+                                <span className="text-xs text-indigo-100">Agendar manualmente</span>
+                            </div>
+                        </button>
+
+                        <div className="grid grid-cols-2 gap-3">
+                             <button onClick={() => setActiveTab('CLIENTS')} className="p-4 bg-white border border-gray-200 rounded-xl hover:border-indigo-500 hover:shadow-md transition-all flex flex-col items-center gap-2 text-gray-600 hover:text-indigo-600">
+                                 <Users size={24}/>
+                                 <span className="text-xs font-bold">Clientes</span>
+                             </button>
+                             <button onClick={() => setActiveTab('EMPLOYEES')} className="p-4 bg-white border border-gray-200 rounded-xl hover:border-indigo-500 hover:shadow-md transition-all flex flex-col items-center gap-2 text-gray-600 hover:text-indigo-600">
+                                 <User size={24}/>
+                                 <span className="text-xs font-bold">Empleados</span>
+                             </button>
+                             <button onClick={() => setActiveTab('SERVICES')} className="p-4 bg-white border border-gray-200 rounded-xl hover:border-indigo-500 hover:shadow-md transition-all flex flex-col items-center gap-2 text-gray-600 hover:text-indigo-600">
+                                 <Scissors size={24}/>
+                                 <span className="text-xs font-bold">Servicios</span>
+                             </button>
+                             <button onClick={() => setActiveTab('BRANCHES')} className="p-4 bg-white border border-gray-200 rounded-xl hover:border-indigo-500 hover:shadow-md transition-all flex flex-col items-center gap-2 text-gray-600 hover:text-indigo-600">
+                                 <MapPin size={24}/>
+                                 <span className="text-xs font-bold">Sucursales</span>
+                             </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+  };
 
   const renderCalendarView = () => {
     const branchEmployees = dataService.getEmployeesByBranch(selectedBranchId);
@@ -675,7 +872,8 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-gray-800">Sucursales</h2>
         <Button size="sm" onClick={() => setEditingBranch({
-            name: '', address: '', image: 'https://picsum.photos/400/200?random=' + Math.floor(Math.random() * 100), serviceIds: []
+            name: '', address: '', image: 'https://picsum.photos/400/200?random=' + Math.floor(Math.random() * 100), serviceIds: [],
+            lat: 6.17, lng: -75.60
         })}><Plus size={16} className="mr-2"/> Nueva Sucursal</Button>
       </div>
       <div className="grid gap-6 md:grid-cols-2">
@@ -1012,38 +1210,118 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
 
   const renderBranchModal = () => {
     if(!editingBranch) return null;
+    
+    // Default location (Medellin/Sabaneta center approx) if not set
+    const mapCenter: [number, number] = [
+        editingBranch.lat || 6.17, 
+        editingBranch.lng || -75.60
+    ];
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <div className="bg-white rounded-lg p-6 max-w-md w-full space-y-4">
-                <h3 className="font-bold">Sucursal</h3>
-                <input placeholder="Nombre" value={editingBranch.name} onChange={e=>setEditingBranch({...editingBranch, name: e.target.value})} className="w-full border p-2 rounded bg-white text-gray-900"/>
-                <input placeholder="Dirección" value={editingBranch.address} onChange={e=>setEditingBranch({...editingBranch, address: e.target.value})} className="w-full border p-2 rounded bg-white text-gray-900"/>
-                <input placeholder="Imagen URL" value={editingBranch.image} onChange={e=>setEditingBranch({...editingBranch, image: e.target.value})} className="w-full border p-2 rounded bg-white text-gray-900"/>
+            <div className="bg-white rounded-lg p-6 max-w-2xl w-full flex flex-col max-h-[90vh]">
+                <h3 className="font-bold mb-4 text-xl">
+                    {editingBranch.id ? 'Editar Sucursal' : 'Nueva Sucursal'}
+                </h3>
                 
-                <div className="pt-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Servicios Disponibles</label>
-                    <div className="space-y-2 max-h-40 overflow-y-auto">
-                        {services.map(srv => {
-                            const isSelected = (editingBranch.serviceIds || []).includes(srv.id);
-                            return (
-                                <div 
-                                    key={srv.id}
-                                    onClick={() => {
-                                        const currentIds = editingBranch.serviceIds || [];
-                                        const newIds = currentIds.includes(srv.id) ? currentIds.filter(id => id !== srv.id) : [...currentIds, srv.id];
-                                        setEditingBranch({ ...editingBranch, serviceIds: newIds });
-                                    }}
-                                    className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer ${isSelected ? 'border-indigo-500 bg-indigo-50 text-indigo-900' : 'border-gray-200 bg-white text-gray-700'}`}
-                                >
-                                    <span className="text-sm font-medium">{srv.name}</span>
-                                    {isSelected && <CheckCircle size={16} className="text-indigo-600"/>}
+                <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">Nombre</label>
+                                <input 
+                                    placeholder="Ej. Sede Central" 
+                                    value={editingBranch.name} 
+                                    onChange={e=>setEditingBranch({...editingBranch, name: e.target.value})} 
+                                    className="w-full border p-2 rounded bg-white text-gray-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">Dirección</label>
+                                <input 
+                                    placeholder="Ej. Calle 10 #20-30" 
+                                    value={editingBranch.address} 
+                                    onChange={e=>setEditingBranch({...editingBranch, address: e.target.value})} 
+                                    className="w-full border p-2 rounded bg-white text-gray-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">Imagen URL</label>
+                                <input 
+                                    placeholder="https://..." 
+                                    value={editingBranch.image} 
+                                    onChange={e=>setEditingBranch({...editingBranch, image: e.target.value})} 
+                                    className="w-full border p-2 rounded bg-white text-gray-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Latitud</label>
+                                    <input 
+                                        type="number"
+                                        step="any"
+                                        value={editingBranch.lat || ''} 
+                                        onChange={e=>setEditingBranch({...editingBranch, lat: parseFloat(e.target.value)})} 
+                                        className="w-full border p-2 rounded bg-white text-gray-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    />
                                 </div>
-                            )
-                        })}
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Longitud</label>
+                                    <input 
+                                        type="number"
+                                        step="any"
+                                        value={editingBranch.lng || ''} 
+                                        onChange={e=>setEditingBranch({...editingBranch, lng: parseFloat(e.target.value)})} 
+                                        className="w-full border p-2 rounded bg-white text-gray-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    />
+                                </div>
+                            </div>
+                         </div>
+
+                         {/* Map Section */}
+                         <div className="h-64 rounded-lg overflow-hidden border border-gray-200 relative">
+                             <MapContainer center={mapCenter} zoom={13} style={{ height: '100%', width: '100%' }}>
+                                <TileLayer
+                                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                />
+                                <LocationPicker 
+                                    position={editingBranch.lat && editingBranch.lng ? { lat: editingBranch.lat, lng: editingBranch.lng } : null}
+                                    onLocationSelect={(lat, lng) => setEditingBranch({ ...editingBranch, lat, lng })}
+                                />
+                             </MapContainer>
+                             <div className="absolute bottom-2 left-2 bg-white/90 px-2 py-1 text-xs rounded shadow-sm z-[1000]">
+                                 Click en el mapa para ubicar
+                             </div>
+                         </div>
+                    </div>
+
+                    <div className="pt-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Servicios Disponibles</label>
+                        <div className="space-y-2 max-h-40 overflow-y-auto border border-gray-100 rounded-lg p-2">
+                            {services.map(srv => {
+                                const isSelected = (editingBranch.serviceIds || []).includes(srv.id);
+                                return (
+                                    <div 
+                                        key={srv.id}
+                                        onClick={() => {
+                                            const currentIds = editingBranch.serviceIds || [];
+                                            const newIds = currentIds.includes(srv.id) ? currentIds.filter(id => id !== srv.id) : [...currentIds, srv.id];
+                                            setEditingBranch({ ...editingBranch, serviceIds: newIds });
+                                        }}
+                                        className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer ${isSelected ? 'border-indigo-500 bg-indigo-50 text-indigo-900' : 'border-gray-200 bg-white text-gray-700'}`}
+                                    >
+                                        <span className="text-sm font-medium">{srv.name}</span>
+                                        {isSelected && <CheckCircle size={16} className="text-indigo-600"/>}
+                                    </div>
+                                )
+                            })}
+                        </div>
                     </div>
                 </div>
 
-                <div className="flex justify-end gap-2 mt-4">
+                <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-gray-100">
                     <Button variant="secondary" onClick={()=>setEditingBranch(null)}>Cancelar</Button>
                     <Button onClick={() => {
                         if(editingBranch.id) dataService.updateBranch(editingBranch as Branch);
@@ -1095,11 +1373,13 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
 
       <main className="flex-1 p-4 md:p-8 mt-14 md:mt-0 overflow-y-auto h-screen">
         <div className="md:hidden flex gap-2 mb-6 overflow-x-auto pb-2">
-           <button onClick={() => setActiveTab('APPOINTMENTS')} className="px-4 py-2 rounded-full bg-white text-sm">Citas</button>
-           <button onClick={() => setActiveTab('CLIENTS')} className="px-4 py-2 rounded-full bg-white text-sm">Clientes</button>
-           <button onClick={() => setActiveTab('SERVICES')} className="px-4 py-2 rounded-full bg-white text-sm">Servicios</button>
+           <button onClick={() => setActiveTab('DASHBOARD')} className="px-4 py-2 rounded-full bg-white text-sm whitespace-nowrap">Resumen</button>
+           <button onClick={() => setActiveTab('APPOINTMENTS')} className="px-4 py-2 rounded-full bg-white text-sm whitespace-nowrap">Citas</button>
+           <button onClick={() => setActiveTab('CLIENTS')} className="px-4 py-2 rounded-full bg-white text-sm whitespace-nowrap">Clientes</button>
+           <button onClick={() => setActiveTab('SERVICES')} className="px-4 py-2 rounded-full bg-white text-sm whitespace-nowrap">Servicios</button>
         </div>
 
+        {activeTab === 'DASHBOARD' && renderOverview()}
         {activeTab === 'APPOINTMENTS' && renderAppointments()}
         {activeTab === 'CLIENTS' && renderClients()}
         {activeTab === 'SERVICES' && renderServices()}
