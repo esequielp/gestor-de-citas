@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Calendar, MapPin, User, CheckCircle, AlertCircle, Sparkles, Navigation, ExternalLink, Scissors } from 'lucide-react';
+import { ArrowLeft, Calendar, MapPin, User, CheckCircle, AlertCircle, Sparkles, Navigation, ExternalLink, Scissors, Locate, RefreshCw, ChevronRight, Clock, Star, Map, X } from 'lucide-react';
 import { Branch, Employee, Service } from '../types';
 import { dataService } from '../services/dataService';
 import { HOURS_OF_OPERATION } from '../constants';
@@ -13,9 +13,9 @@ interface Props {
   onBack: () => void;
 }
 
-type Step = 1 | 2 | 3 | 4 | 5;
+type Step = 1 | 2 | 3 | 4 | 5 | 6; // 0 removed, starts at 1
 
-// Fix for default Leaflet icons in Webpack/Vite/ESM environments
+// --- Leaflet Icons Fix ---
 const iconPerson = new L.Icon({
     iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
     shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
@@ -34,164 +34,103 @@ const iconBranch = new L.Icon({
     shadowSize: [41, 41]
 });
 
-// Component to recenter map when user location changes
+// Helper Map Component
 const RecenterAutomatically = ({ lat, lng }: { lat: number, lng: number }) => {
   const map = useMap();
   useEffect(() => {
-    map.setView([lat, lng]);
+    map.setView([lat, lng], 13);
   }, [lat, lng, map]);
   return null;
 };
 
 const BookingWizard: React.FC<Props> = ({ onBack }) => {
-  const [step, setStep] = useState<Step>(1);
+  const [step, setStep] = useState<Step>(1); // Start at Service Selection
+  const dateInputRef = useRef<HTMLInputElement>(null);
+  
+  // Data State
   const [allBranches, setAllBranches] = useState<Branch[]>([]);
   const [filteredBranches, setFilteredBranches] = useState<(Branch & { distance?: number })[]>([]);
+  const [allServices, setAllServices] = useState<Service[]>([]);
   
   // Selection State
-  const [allServices, setAllServices] = useState<Service[]>([]);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
-  
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<number | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
-  const [isAutoAssign, setIsAutoAssign] = useState(false);
   
   // Client Form
   const [clientName, setClientName] = useState('');
   const [clientEmail, setClientEmail] = useState('');
   const [clientPhone, setClientPhone] = useState('');
 
-  // Geolocation State
+  // UI State
+  const [showMapModal, setShowMapModal] = useState(false);
+  const [loadingLocation, setLoadingLocation] = useState(false);
   const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null);
-  const [locationError, setLocationError] = useState<string>('');
+  const [locationError, setLocationError] = useState('');
 
-  // Initial Data Load
+  // Initial Load
   useEffect(() => {
     setAllBranches(dataService.getBranches());
-    setAllServices(dataService.getServices().filter(s => s.active)); // Only active services
+    setAllServices(dataService.getServices().filter(s => s.active));
     
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     setSelectedDate(tomorrow.toISOString().split('T')[0]);
-
-    // Request Geolocation
-    if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                setUserLocation({
-                    lat: position.coords.latitude,
-                    lng: position.coords.longitude
-                });
-            },
-            (error) => {
-                console.warn("Geolocation denied or error", error);
-                setLocationError("No se pudo obtener tu ubicación.");
-            }
-        );
-    } else {
-        setLocationError("Tu navegador no soporta geolocalización.");
-    }
   }, []);
 
-  // Update filtered branches based on selected service AND location
+  // Filter Logic
   useEffect(() => {
     let relevantBranches = allBranches;
-
-    // Filter by Service if selected
     if (selectedService) {
         relevantBranches = relevantBranches.filter(b => b.serviceIds.includes(selectedService.id));
     }
-
-    // Calculate Distances
     if (userLocation) {
         const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-            const R = 6371; // km
+            const R = 6371; 
             const dLat = (lat2 - lat1) * Math.PI / 180;
             const dLon = (lon2 - lon1) * Math.PI / 180;
             const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
                     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
                     Math.sin(dLon/2) * Math.sin(dLon/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return R * c;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         };
-
         const sorted = relevantBranches.map(b => ({
             ...b,
             distance: calculateDistance(userLocation.lat, userLocation.lng, b.lat, b.lng)
         })).sort((a, b) => (a.distance || 0) - (b.distance || 0));
-        
         setFilteredBranches(sorted);
     } else {
         setFilteredBranches(relevantBranches);
     }
   }, [selectedService, userLocation, allBranches]);
 
-  // --- Handlers ---
-
-  const handleServiceSelect = (service: Service) => {
-    setSelectedService(service);
-    // Reset downstream selections
-    setSelectedBranch(null);
-    setSelectedTime(null);
-    setSelectedEmployee(null);
-    setStep(2);
-  };
-
-  const handleBranchSelect = (branch: Branch) => {
-    setSelectedBranch(branch);
-    // Reset downstream selections
-    setSelectedTime(null);
-    setSelectedEmployee(null);
-    setStep(3);
-  };
-
-  const handleTimeSelect = (time: number) => {
-    setSelectedTime(time);
-  };
-
-  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSelectedDate(e.target.value);
-    setSelectedTime(null);
-  };
-
-  const confirmTimeAndProceed = () => {
-    if (selectedTime !== null && selectedDate) {
-      setStep(4);
-    }
-  };
-
-  const handleEmployeeSelect = (employee: Employee | 'any') => {
-    if (employee === 'any') {
-      setIsAutoAssign(true);
-      // Pick first available who performs this service
-      const anyAvailable = dataService.getAvailableEmployeesForSlot(
-        selectedBranch!.id, 
-        selectedDate, 
-        selectedTime!, 
-        selectedService!.id
-      );
-
-      if (anyAvailable.length > 0) {
-        setSelectedEmployee(anyAvailable[0]);
-      } else {
-        alert('Error: No hay empleados disponibles para este servicio en este horario.');
+  const requestLocation = () => {
+    if (!navigator.geolocation) {
+        setLocationError("No soportado");
         return;
-      }
-    } else {
-      setIsAutoAssign(false);
-      setSelectedEmployee(employee);
     }
-    setStep(5);
+    setLoadingLocation(true);
+    setLocationError('');
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            setUserLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
+            setLoadingLocation(false);
+        },
+        (error) => {
+            console.warn(error);
+            setLocationError("Error ubicación");
+            setLoadingLocation(false);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
   };
 
+  // --- Handlers ---
   const handleFinalBooking = () => {
     if (!selectedBranch || !selectedEmployee || !selectedTime || !selectedService) return;
-    
-    // Create or Get Client
     const client = dataService.getOrCreateClient(clientName, clientEmail, clientPhone);
-
     dataService.addAppointment({
       branchId: selectedBranch.id,
       employeeId: selectedEmployee.id,
@@ -201,411 +140,405 @@ const BookingWizard: React.FC<Props> = ({ onBack }) => {
       time: selectedTime,
       clientName: clientName,
     });
-    
-    alert('¡Cita Confirmada!');
-    onBack();
+    setStep(6); // Success Screen
   };
 
-  // --- Render Steps ---
+  // --- Render Functions ---
 
-  // STEP 1: SERVICE SELECTION
-  const renderStep1 = () => (
-    <div className="space-y-6 animate-fade-in">
-      <h2 className="text-2xl font-bold text-gray-800">¿Qué servicio necesitas?</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {allServices.map((service) => (
-          <div 
-            key={service.id}
-            onClick={() => handleServiceSelect(service)}
-            className="group cursor-pointer bg-white p-5 rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:border-indigo-500 transition-all flex justify-between items-center"
-          >
-              <div>
-                <h3 className="font-semibold text-gray-900 text-lg group-hover:text-indigo-600">{service.name}</h3>
-                <p className="text-gray-500 text-sm mt-1">{service.description}</p>
-                <div className="mt-2 flex items-center gap-3 text-sm">
-                  <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md font-medium">{service.duration} min</span>
-                  <span className="font-semibold text-gray-900">${service.price}</span>
-                </div>
-              </div>
-              <div className="text-gray-300 group-hover:text-indigo-500">
-                <Scissors size={24} />
-              </div>
+  const ProgressBar = () => {
+      const progress = Math.min((step / 5) * 100, 100);
+      return (
+          <div className="w-full h-1 bg-gray-100 sticky top-0 z-20">
+              <div 
+                className="h-full bg-indigo-600 transition-all duration-500 ease-out" 
+                style={{ width: `${progress}%` }}
+              />
           </div>
-        ))}
+      );
+  };
+
+  // STEP 1: SERVICES
+  const renderServices = () => (
+      <div className="p-6 space-y-6 animate-fade-in pb-24">
+          <div className="space-y-2">
+              <h2 className="text-2xl font-bold text-gray-900">Elige un servicio</h2>
+              <p className="text-gray-500">Selecciona el tratamiento que deseas realizarte hoy.</p>
+          </div>
+
+          <div className="space-y-4">
+              {allServices.map(service => (
+                  <div 
+                    key={service.id}
+                    onClick={() => { setSelectedService(service); setStep(2); }}
+                    className="group bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-indigo-500 transition-all cursor-pointer flex items-center gap-4 active:scale-[0.98]"
+                  >
+                      <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                          <Scissors size={24} />
+                      </div>
+                      <div className="flex-1">
+                          <div className="flex justify-between items-center mb-1">
+                              <h3 className="font-bold text-gray-900">{service.name}</h3>
+                              <span className="font-bold text-indigo-600">${service.price}</span>
+                          </div>
+                          <p className="text-xs text-gray-500 line-clamp-1">{service.description}</p>
+                          <div className="flex items-center gap-1 mt-1 text-xs text-gray-400">
+                              <Clock size={12} /> {service.duration} min
+                          </div>
+                      </div>
+                      <ChevronRight className="text-gray-300 group-hover:text-indigo-500" />
+                  </div>
+              ))}
+          </div>
       </div>
-    </div>
   );
 
-  // STEP 2: BRANCH SELECTION (Filtered by Service)
-  const renderStep2 = () => (
-    <div className="space-y-6 animate-fade-in flex flex-col h-full">
-      <div className="flex justify-between items-center">
-        <div>
-            <h2 className="text-2xl font-bold text-gray-800">Elige una Sucursal</h2>
-            <p className="text-gray-500 text-sm">Mostrando sedes con el servicio: <span className="font-semibold text-indigo-600">{selectedService?.name}</span></p>
-        </div>
-        {locationError && <span className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded-full">{locationError}</span>}
-      </div>
-
-      {filteredBranches.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-xl shadow-sm border border-gray-200">
-             <AlertCircle className="w-12 h-12 text-orange-400 mx-auto mb-4" />
-             <h3 className="text-lg font-bold text-gray-800">Lo sentimos</h3>
-             <p className="text-gray-500">Este servicio no está disponible en ninguna sucursal actualmente.</p>
-             <Button variant="secondary" className="mt-4" onClick={() => setStep(1)}>Volver a Servicios</Button>
+  // STEP 2: BRANCHES
+  const renderBranches = () => (
+      <div className="p-6 space-y-6 animate-fade-in pb-24 h-full flex flex-col">
+          <div className="flex justify-between items-start">
+              <div className="space-y-2">
+                  <h2 className="text-2xl font-bold text-gray-900">¿Dónde?</h2>
+                  <p className="text-gray-500 text-sm">Sucursales con <span className="text-indigo-600 font-medium">{selectedService?.name}</span>.</p>
+              </div>
+              <button 
+                onClick={requestLocation}
+                className={`p-2 rounded-full border ${userLocation ? 'text-green-600 border-green-200 bg-green-50' : 'text-gray-500 border-gray-200'} `}
+              >
+                  {loadingLocation ? <RefreshCw size={20} className="animate-spin" /> : <Locate size={20} />}
+              </button>
           </div>
-      ) : (
-        <div className="flex flex-col lg:flex-row gap-6 h-full">
-            {/* Map Section */}
-            <div className="w-full lg:w-1/2 h-64 lg:h-auto min-h-[300px] rounded-xl overflow-hidden shadow-sm border border-gray-200 relative z-0">
-                <MapContainer center={[6.17, -75.60]} zoom={12} scrollWheelZoom={false}>
-                    <TileLayer
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    />
-                    
-                    {/* User Location Marker */}
-                    {userLocation && (
-                        <>
-                            <Marker position={[userLocation.lat, userLocation.lng]} icon={iconPerson}>
-                                <Popup>¡Estás aquí!</Popup>
-                            </Marker>
-                            <RecenterAutomatically lat={userLocation.lat} lng={userLocation.lng} />
-                        </>
-                    )}
 
-                    {/* Branch Markers */}
-                    {filteredBranches.map(branch => (
-                        <Marker key={branch.id} position={[branch.lat, branch.lng]} icon={iconBranch}>
-                            <Popup>
-                                <div className="p-1">
-                                    <strong className="block text-sm mb-1">{branch.name}</strong>
-                                    <span className="text-xs text-gray-500 block mb-2">{branch.address}</span>
-                                    <button 
-                                        onClick={() => handleBranchSelect(branch)}
-                                        className="mt-2 w-full bg-indigo-600 text-white text-xs py-1 rounded hover:bg-indigo-700"
-                                    >
-                                        Seleccionar
-                                    </button>
-                                </div>
-                            </Popup>
-                        </Marker>
-                    ))}
-                </MapContainer>
-            </div>
+          {locationError && <div className="text-xs text-orange-500 bg-orange-50 p-2 rounded-lg flex items-center gap-2"><AlertCircle size={14}/> {locationError}</div>}
 
-            {/* List Section */}
-            <div className="w-full lg:w-1/2 space-y-4 overflow-y-auto max-h-[600px] pr-2">
-                {filteredBranches.map((branch) => (
-                <div 
+          <div className="flex-1 overflow-y-auto space-y-4">
+              {filteredBranches.map(branch => (
+                  <div 
                     key={branch.id}
-                    onClick={() => handleBranchSelect(branch)}
-                    className="group cursor-pointer bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-xl hover:border-indigo-500 transition-all overflow-hidden flex flex-row h-32"
-                >
-                    <div className="w-32 bg-gray-200 relative shrink-0">
-                    <img src={branch.image} alt={branch.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                    </div>
-                    <div className="p-4 flex flex-col justify-center flex-1">
-                    <div className="flex justify-between items-start">
-                        <h3 className="font-semibold text-gray-900 group-hover:text-indigo-600 line-clamp-1">{branch.name}</h3>
-                        {branch.distance !== undefined && (
-                            <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0">
-                                <Navigation size={10} /> {branch.distance.toFixed(1)} km
-                            </span>
-                        )}
-                    </div>
-                    <div className="flex items-center text-gray-500 text-xs mt-1 mb-2">
-                        <MapPin className="w-3 h-3 mr-1" />
-                        <span className="line-clamp-1">{branch.address}</span>
-                    </div>
-                    <div className="flex gap-2 mt-auto">
-                        <a 
-                            href={`https://www.google.com/maps/search/?api=1&query=${branch.lat},${branch.lng}`} 
-                            target="_blank" 
-                            rel="noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-xs text-indigo-600 border border-indigo-100 px-2 py-1 rounded hover:bg-indigo-50 flex items-center gap-1"
-                        >
-                            Mapa <ExternalLink size={10}/>
-                        </a>
-                        <span className="ml-auto text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded">Seleccionar &rarr;</span>
-                    </div>
-                    </div>
-                </div>
-                ))}
-            </div>
-        </div>
-      )}
-    </div>
+                    className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-lg transition-all cursor-pointer group"
+                    onClick={() => { setSelectedBranch(branch); setStep(3); }}
+                  >
+                      <div className="h-32 bg-gray-200 relative">
+                          <img src={branch.image} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={branch.name} />
+                          {branch.distance !== undefined && (
+                              <div className="absolute top-2 right-2 bg-white/90 backdrop-blur px-2 py-1 rounded-full text-xs font-bold text-gray-700 shadow-sm flex items-center gap-1">
+                                  <Navigation size={10} className="text-indigo-600"/> {branch.distance.toFixed(1)} km
+                              </div>
+                          )}
+                      </div>
+                      <div className="p-4">
+                          <h3 className="font-bold text-gray-900 text-lg mb-1">{branch.name}</h3>
+                          <div className="flex items-start gap-2 text-sm text-gray-500 mb-3">
+                              <MapPin size={16} className="shrink-0 mt-0.5" />
+                              {branch.address}
+                          </div>
+                          <div className="flex gap-2">
+                                <button 
+                                    className="flex-1 bg-indigo-600 text-white py-2 rounded-lg font-medium text-sm hover:bg-indigo-700 transition-colors"
+                                >
+                                    Seleccionar
+                                </button>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); setShowMapModal(true); }}
+                                    className="px-3 py-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors"
+                                >
+                                    <Map size={20} />
+                                </button>
+                          </div>
+                      </div>
+                  </div>
+              ))}
+              
+              {filteredBranches.length === 0 && (
+                  <div className="text-center py-10 px-4 bg-gray-50 rounded-2xl border border-dashed border-gray-300">
+                      <p className="text-gray-500">No hay sucursales disponibles para este servicio.</p>
+                      <Button variant="secondary" size="sm" className="mt-4" onClick={() => setStep(1)}>Cambiar Servicio</Button>
+                  </div>
+              )}
+          </div>
+
+          {/* Map Modal for Mobile */}
+          {showMapModal && (
+              <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+                  <div className="bg-white w-full max-w-lg h-[70vh] rounded-2xl overflow-hidden relative shadow-2xl">
+                      <button onClick={() => setShowMapModal(false)} className="absolute top-4 right-4 z-[1000] bg-white p-2 rounded-full shadow-md hover:bg-gray-100"><X size={20}/></button>
+                      <MapContainer center={userLocation ? [userLocation.lat, userLocation.lng] : [6.17, -75.60]} zoom={13} style={{ height: '100%', width: '100%' }}>
+                        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                        {userLocation && <Marker position={[userLocation.lat, userLocation.lng]} icon={iconPerson}><Popup>Tú</Popup></Marker>}
+                        {filteredBranches.map(b => (
+                            <Marker key={b.id} position={[b.lat, b.lng]} icon={iconBranch}>
+                                <Popup>
+                                    <strong>{b.name}</strong><br/>{b.address}<br/>
+                                    <button onClick={() => { setSelectedBranch(b); setStep(3); setShowMapModal(false); }} className="mt-2 text-indigo-600 font-bold underline">Seleccionar</button>
+                                </Popup>
+                            </Marker>
+                        ))}
+                      </MapContainer>
+                  </div>
+              </div>
+          )}
+      </div>
   );
 
   // STEP 3: DATE & TIME
-  const renderStep3 = () => (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex flex-col md:flex-row justify-between md:items-center gap-2">
-        <h2 className="text-2xl font-bold text-gray-800">Fecha y Hora</h2>
-        <div className="flex gap-2 text-sm text-gray-500">
-             <span className="bg-gray-100 px-2 py-1 rounded">{selectedService?.name}</span>
-             <span className="bg-gray-100 px-2 py-1 rounded">{selectedBranch?.name}</span>
-        </div>
-      </div>
-      
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 space-y-6">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Fecha de Cita</label>
-          <input 
-            type="date" 
-            value={selectedDate}
-            min={new Date().toISOString().split('T')[0]}
-            onChange={handleDateChange}
-            className="w-full md:w-auto p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-gray-900"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-3">Horarios Disponibles ({selectedDate})</label>
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
-            {HOURS_OF_OPERATION.map((hour) => {
-              // Determine if ANY employee is available at this hour for the branch AND service
-              const anyAvailable = dataService.getAvailableEmployeesForSlot(
-                selectedBranch!.id, 
-                selectedDate, 
-                hour, 
-                selectedService!.id
-              ).length > 0;
-              
-              const isSelected = selectedTime === hour;
-
-              return (
-                <button
-                  key={hour}
-                  disabled={!anyAvailable}
-                  onClick={() => handleTimeSelect(hour)}
-                  className={`
-                    p-3 rounded-lg text-sm font-medium transition-all
-                    ${isSelected 
-                      ? 'bg-indigo-600 text-white ring-2 ring-indigo-600 ring-offset-2' 
-                      : anyAvailable 
-                        ? 'bg-white border border-gray-200 text-gray-700 hover:border-indigo-500 hover:text-indigo-600' 
-                        : 'bg-gray-50 text-gray-300 cursor-not-allowed border border-gray-100'}
-                  `}
-                >
-                  {hour}:00
-                </button>
-              );
-            })}
+  const renderDateTime = () => (
+      <div className="p-6 space-y-6 animate-fade-in pb-24">
+          <div className="space-y-2">
+              <h2 className="text-2xl font-bold text-gray-900">¿Cuándo?</h2>
+              <div className="flex gap-2 text-xs flex-wrap">
+                  <span className="bg-indigo-50 text-indigo-700 px-2 py-1 rounded-md">{selectedService?.name}</span>
+                  <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-md">@ {selectedBranch?.name}</span>
+              </div>
           </div>
-          <p className="text-xs text-gray-500 mt-2">* Horarios sujetos a disponibilidad de personal para el servicio seleccionado.</p>
-        </div>
-      </div>
 
-      <div className="flex justify-end pt-4">
-        <Button 
-          disabled={selectedTime === null} 
-          onClick={confirmTimeAndProceed}
-          className="w-full md:w-auto"
-        >
-          Continuar
-        </Button>
+          <div className="space-y-6">
+              <div className="space-y-2">
+                  <label className="text-sm font-bold text-gray-700 ml-1">Selecciona Fecha</label>
+                  <div className="relative">
+                      <input 
+                          ref={dateInputRef}
+                          type="date" 
+                          value={selectedDate}
+                          min={new Date().toISOString().split('T')[0]}
+                          onChange={(e) => { setSelectedDate(e.target.value); setSelectedTime(null); }}
+                          onClick={() => dateInputRef.current?.showPicker()} 
+                          className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-gray-900 font-medium cursor-pointer appearance-none"
+                      />
+                      <Calendar 
+                        className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500 pointer-events-none" 
+                        size={20} 
+                      />
+                  </div>
+              </div>
+
+              <div className="space-y-2">
+                  <label className="text-sm font-bold text-gray-700 ml-1">Horarios Disponibles</label>
+                  <div className="grid grid-cols-4 gap-3">
+                      {HOURS_OF_OPERATION.map(hour => {
+                          const hasAvailability = dataService.getAvailableEmployeesForSlot(selectedBranch!.id, selectedDate, hour, selectedService!.id).length > 0;
+                          const isSelected = selectedTime === hour;
+                          
+                          return (
+                              <button
+                                key={hour}
+                                disabled={!hasAvailability}
+                                onClick={() => setSelectedTime(hour)}
+                                className={`
+                                    py-3 rounded-xl text-sm font-bold transition-all relative overflow-hidden
+                                    ${isSelected 
+                                        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 scale-105' 
+                                        : hasAvailability 
+                                            ? 'bg-white border border-gray-200 text-gray-700 hover:border-indigo-500' 
+                                            : 'bg-gray-50 text-gray-300 border border-transparent cursor-not-allowed'}
+                                `}
+                              >
+                                  {hour}:00
+                              </button>
+                          )
+                      })}
+                  </div>
+              </div>
+          </div>
       </div>
-    </div>
   );
 
   // STEP 4: PROFESSIONAL
-  const renderStep4 = () => {
-    // Get employees filtered by branch AND service capability
+  const renderProfessional = () => {
     const eligibleEmployees = dataService.getEmployeesByBranch(selectedBranch!.id)
                                          .filter(e => e.serviceIds.includes(selectedService!.id));
-
     return (
-      <div className="space-y-6 animate-fade-in">
-        <h2 className="text-2xl font-bold text-gray-800">Selecciona Profesional</h2>
-        
-        {eligibleEmployees.length === 0 ? (
-          <div className="p-4 bg-yellow-50 text-yellow-800 rounded-lg">No hay profesionales configurados para este servicio en esta sucursal.</div>
-        ) : (
-          <>
-            {/* Option 1: Any Professional */}
+        <div className="p-6 space-y-6 animate-fade-in pb-24">
+            <div className="space-y-2">
+                <h2 className="text-2xl font-bold text-gray-900">¿Con quién?</h2>
+                <p className="text-gray-500 text-sm">Elige tu profesional preferido.</p>
+            </div>
+
             <div 
-              onClick={() => handleEmployeeSelect('any')}
-              className="bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-100 p-4 rounded-xl cursor-pointer hover:shadow-md transition-all flex items-center justify-between group"
+                onClick={() => { setSelectedEmployee({ id: 'any', name: 'Cualquiera' } as Employee); setStep(5); }}
+                className="flex items-center gap-4 p-4 bg-gradient-to-r from-indigo-50 to-white border border-indigo-100 rounded-2xl cursor-pointer hover:shadow-md transition-all mb-6"
             >
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600">
-                  <User className="w-6 h-6" />
+                <div className="w-14 h-14 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 shadow-sm">
+                    <Sparkles size={24}/>
                 </div>
                 <div>
-                  <h3 className="font-semibold text-gray-900">Cualquier Profesional</h3>
-                  <p className="text-sm text-gray-500">Asignaremos al mejor disponible para ti.</p>
+                    <h3 className="font-bold text-gray-900">Cualquier Profesional</h3>
+                    <p className="text-xs text-indigo-600 font-medium">Asignación automática rápida</p>
                 </div>
-              </div>
-              <div className="text-indigo-600 font-medium group-hover:translate-x-1 transition-transform">Seleccionar &rarr;</div>
+                <ChevronRight className="ml-auto text-indigo-300"/>
             </div>
 
-            <div className="border-t border-gray-200 my-4"></div>
-
-            {/* Option 2: Specific Professionals */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {eligibleEmployees.map(emp => {
-                // Check availability SPECIFICALLY for the selected service context
-                const isAvailable = dataService.isEmployeeAvailable(emp.id, selectedDate, selectedTime!, selectedService!.id);
-                const nextSlot = !isAvailable ? dataService.getNextAvailableSlot(emp.id, selectedDate, selectedTime!, selectedService!.id) : null;
-
-                return (
-                  <div 
-                    key={emp.id}
-                    className={`
-                      relative border rounded-xl p-4 transition-all
-                      ${isAvailable 
-                        ? 'bg-white border-gray-200 hover:border-indigo-500 cursor-pointer hover:shadow-md' 
-                        : 'bg-gray-50 border-gray-200 opacity-90'}
-                    `}
-                    onClick={() => {
-                      if (isAvailable) handleEmployeeSelect(emp);
-                    }}
-                  >
-                    <div className="flex items-start gap-4">
-                      <img src={emp.avatar} alt={emp.name} className={`w-14 h-14 rounded-full object-cover ${!isAvailable && 'grayscale'}`} />
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-gray-900">{emp.name}</h3>
-                        <p className="text-sm text-gray-500">{emp.role}</p>
-                        
-                        <div className="mt-2">
-                          {isAvailable ? (
-                            <span className="inline-flex items-center text-xs font-medium text-green-700 bg-green-50 px-2 py-1 rounded-full">
-                              <CheckCircle className="w-3 h-3 mr-1" /> Disponible
-                            </span>
-                          ) : (
-                            <div className="space-y-1">
-                              <span className="inline-flex items-center text-xs font-medium text-red-700 bg-red-50 px-2 py-1 rounded-full">
-                                <AlertCircle className="w-3 h-3 mr-1" /> Ocupado a las {selectedTime}:00
-                              </span>
-                              {nextSlot && (
-                                <p className="text-xs text-indigo-600 mt-1 font-medium">
-                                  Siguiente hora libre: {nextSlot}:00
-                                </p>
-                              )}
+            <div className="space-y-3">
+                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider ml-1">Especialistas</h3>
+                {eligibleEmployees.map(emp => {
+                    // Check logic
+                    const isAvailable = dataService.isEmployeeAvailable(emp.id, selectedDate, selectedTime!, selectedService!.id);
+                    return (
+                        <div
+                            key={emp.id}
+                            onClick={() => { if(isAvailable) { setSelectedEmployee(emp); setStep(5); } }}
+                            className={`flex items-center gap-4 p-3 rounded-2xl border transition-all ${isAvailable ? 'bg-white border-gray-100 cursor-pointer hover:border-indigo-500 hover:shadow-sm' : 'bg-gray-50 border-transparent opacity-60 grayscale'}`}
+                        >
+                            <img src={emp.avatar} className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm" alt={emp.name} />
+                            <div className="flex-1">
+                                <h4 className="font-bold text-gray-900">{emp.name}</h4>
+                                <p className="text-xs text-gray-500">{emp.role}</p>
                             </div>
-                          )}
+                            {isAvailable ? (
+                                <div className="w-6 h-6 rounded-full border-2 border-gray-200 flex items-center justify-center group-hover:border-indigo-600">
+                                    <div className="w-3 h-3 rounded-full bg-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                </div>
+                            ) : (
+                                <span className="text-[10px] font-bold text-red-500 bg-red-50 px-2 py-1 rounded">Ocupado</span>
+                            )}
                         </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+                    )
+                })}
             </div>
-          </>
-        )}
-      </div>
+        </div>
     );
   };
 
-  // STEP 5: CONFIRMATION
-  const renderStep5 = () => (
-    <div className="space-y-6 animate-fade-in max-w-lg mx-auto">
-      <div className="text-center space-y-2">
-        <h2 className="text-2xl font-bold text-gray-800">Confirmar Cita</h2>
-        <p className="text-gray-500">Por favor completa tus datos para finalizar.</p>
-      </div>
-
-      <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100 space-y-4">
-        {/* Summary Info */}
-        <div className="grid grid-cols-2 gap-4 text-sm pb-4 border-b border-gray-100">
-             <div>
-                 <p className="text-xs text-gray-500 uppercase font-bold">Servicio</p>
-                 <p className="font-medium text-gray-900">{selectedService?.name}</p>
-            </div>
-            <div>
-                 <p className="text-xs text-gray-500 uppercase font-bold">Sucursal</p>
-                 <p className="font-medium text-gray-900">{selectedBranch?.name}</p>
-            </div>
-            <div>
-                 <p className="text-xs text-gray-500 uppercase font-bold">Fecha/Hora</p>
-                 <p className="font-medium text-gray-900">{selectedDate} - {selectedTime}:00</p>
-            </div>
-            <div>
-                 <p className="text-xs text-gray-500 uppercase font-bold">Profesional</p>
-                 <p className="font-medium text-gray-900">{selectedEmployee?.name}</p>
-            </div>
-        </div>
-
-        <div className="space-y-3 pt-2">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Nombre Completo</label>
-            <input 
-                type="text" 
-                placeholder="Ej. Juan Pérez"
-                value={clientName}
-                onChange={(e) => setClientName(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-gray-900"
-            />
+  // STEP 5: FORM
+  const renderForm = () => (
+      <div className="p-6 space-y-6 animate-fade-in pb-32">
+          <div className="space-y-2">
+              <h2 className="text-2xl font-bold text-gray-900">Tus Datos</h2>
+              <p className="text-gray-500 text-sm">Solo falta este paso para confirmar.</p>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono</label>
-            <input 
-                type="text" 
-                placeholder="Ej. 555-1234"
-                value={clientPhone}
-                onChange={(e) => setClientPhone(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-gray-900"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input 
-                type="email" 
-                placeholder="ejemplo@correo.com"
-                value={clientEmail}
-                onChange={(e) => setClientEmail(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-gray-900"
-            />
-          </div>
-        </div>
-      </div>
 
-      <div className="flex gap-4">
-        <Button variant="secondary" fullWidth onClick={() => setStep(4)}>Atrás</Button>
-        <Button fullWidth onClick={handleFinalBooking} disabled={!clientName.trim() || !clientPhone.trim()}>Confirmar Reserva</Button>
+          <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-4">
+              {/* Summary Card */}
+              <div className="flex items-start gap-4 pb-4 border-b border-gray-50">
+                  <div className="w-16 h-16 bg-gray-100 rounded-xl overflow-hidden shrink-0">
+                      <img src={selectedBranch?.image} className="w-full h-full object-cover" />
+                  </div>
+                  <div>
+                      <h3 className="font-bold text-gray-900">{selectedService?.name}</h3>
+                      <p className="text-sm text-gray-500">{selectedBranch?.name}</p>
+                      <div className="flex items-center gap-2 mt-1 text-xs font-medium text-indigo-600">
+                          <span className="bg-indigo-50 px-2 py-0.5 rounded">{selectedDate}</span>
+                          <span className="bg-indigo-50 px-2 py-0.5 rounded">{selectedTime}:00</span>
+                      </div>
+                  </div>
+              </div>
+
+              <div className="space-y-4 pt-2">
+                  <div className="space-y-1">
+                      <label className="text-xs font-bold text-gray-500 uppercase ml-1">Nombre Completo</label>
+                      <input 
+                        value={clientName} 
+                        onChange={e => setClientName(e.target.value)} 
+                        placeholder="Ej. Ana Pérez"
+                        className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                      />
+                  </div>
+                  <div className="space-y-1">
+                      <label className="text-xs font-bold text-gray-500 uppercase ml-1">Teléfono</label>
+                      <input 
+                        value={clientPhone} 
+                        onChange={e => setClientPhone(e.target.value)} 
+                        placeholder="Ej. 300 123 4567"
+                        type="tel"
+                        className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                      />
+                  </div>
+                  <div className="space-y-1">
+                      <label className="text-xs font-bold text-gray-500 uppercase ml-1">Correo Electrónico</label>
+                      <input 
+                        value={clientEmail} 
+                        onChange={e => setClientEmail(e.target.value)} 
+                        placeholder="tucorreo@ejemplo.com"
+                        type="email"
+                        className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                      />
+                  </div>
+              </div>
+          </div>
       </div>
-    </div>
   );
 
-  return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-4 py-4 sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <button onClick={step === 1 ? onBack : () => setStep(prev => (prev - 1) as Step)} className="p-2 hover:bg-gray-100 rounded-full text-gray-600">
-              <ArrowLeft size={20} />
-            </button>
-            <h1 className="font-bold text-gray-800 text-lg hidden sm:block">
-                {step === 1 && 'Seleccionar Servicio'}
-                {step === 2 && 'Seleccionar Sucursal'}
-                {step === 3 && 'Seleccionar Fecha'}
-                {step === 4 && 'Seleccionar Profesional'}
-                {step === 5 && 'Confirmación'}
-            </h1>
-            <h1 className="font-bold text-gray-800 text-lg sm:hidden">
-               Paso {step} de 5
-            </h1>
+  // STEP 6: SUCCESS
+  const renderSuccess = () => (
+      <div className="h-full flex flex-col items-center justify-center p-8 text-center animate-fade-in bg-white">
+          <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mb-8 animate-bounce">
+              <CheckCircle className="w-12 h-12 text-green-600" />
           </div>
-          <div className="flex gap-1">
-            {[1, 2, 3, 4, 5].map(s => (
-              <div key={s} className={`h-1.5 w-6 rounded-full transition-all ${s <= step ? 'bg-indigo-600' : 'bg-gray-200'}`} />
-            ))}
-          </div>
-        </div>
-      </div>
+          <h2 className="text-3xl font-bold text-gray-900 mb-4">¡Cita Confirmada!</h2>
+          <p className="text-gray-500 mb-8 max-w-xs mx-auto">
+              Te hemos enviado los detalles a <strong>{clientEmail}</strong>. Nos vemos pronto.
+          </p>
 
-      {/* Content */}
-      <div className="flex-1 max-w-5xl mx-auto w-full p-4 md:p-8">
-        {step === 1 && renderStep1()}
-        {step === 2 && renderStep2()}
-        {step === 3 && renderStep3()}
-        {step === 4 && renderStep4()}
-        {step === 5 && renderStep5()}
+          <div className="w-full max-w-xs bg-gray-50 rounded-2xl p-6 mb-8 border border-gray-100 shadow-inner">
+               <div className="text-sm text-gray-500 mb-1">Tu código de reserva</div>
+               <div className="text-2xl font-mono font-bold text-gray-900 tracking-widest">AG-{Math.floor(Math.random()*10000)}</div>
+          </div>
+
+          <div className="space-y-3 w-full max-w-xs">
+              <Button fullWidth onClick={onBack}>Volver al Inicio</Button>
+              <Button fullWidth variant="secondary" onClick={() => window.print()}>Guardar Comprobante</Button>
+          </div>
       </div>
+  );
+
+  // --- Main Render Container ---
+  return (
+    <div className="min-h-screen bg-gray-50 flex justify-center items-start">
+        {/* Mobile-First Container: Full width on mobile, centered card on desktop */}
+        <div className="w-full md:max-w-[480px] bg-white min-h-screen md:min-h-[800px] md:h-auto md:my-8 md:rounded-[32px] md:shadow-2xl md:border md:border-gray-100 relative overflow-hidden flex flex-col">
+            
+            {/* Header (Sticky) */}
+            {step < 6 && (
+                <div className="sticky top-0 bg-white/80 backdrop-blur-md z-30 border-b border-gray-100">
+                    <ProgressBar />
+                    <div className="flex items-center justify-between p-4">
+                        <button 
+                            onClick={() => step === 1 ? onBack() : setStep(step - 1 as Step)} 
+                            className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-700"
+                        >
+                            <ArrowLeft size={24} />
+                        </button>
+                        <span className="font-bold text-gray-900 text-sm uppercase tracking-wide">
+                            {step === 1 && 'Servicios'}
+                            {step === 2 && 'Ubicación'}
+                            {step === 3 && 'Fecha'}
+                            {step === 4 && 'Profesional'}
+                            {step === 5 && 'Confirmar'}
+                        </span>
+                        <div className="w-10"></div> {/* Spacer for alignment */}
+                    </div>
+                </div>
+            )}
+
+            {/* Content Area */}
+            <div className="flex-1 overflow-y-auto relative scroll-smooth">
+                {step === 1 && renderServices()}
+                {step === 2 && renderBranches()}
+                {step === 3 && renderDateTime()}
+                {step === 4 && renderProfessional()}
+                {step === 5 && renderForm()}
+                {step === 6 && renderSuccess()}
+            </div>
+
+            {/* Floating Action Button for Next Steps (Only 3, 4, 5) */}
+            {(step === 3 || step === 5) && (
+                <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-white via-white to-transparent z-40">
+                    <Button 
+                        fullWidth 
+                        size="lg" 
+                        disabled={
+                            (step === 3 && (!selectedDate || selectedTime === null)) || 
+                            (step === 5 && (!clientName || !clientPhone))
+                        }
+                        onClick={() => {
+                            if (step === 3) setStep(4);
+                            if (step === 5) handleFinalBooking();
+                        }}
+                        className="shadow-xl shadow-indigo-200 py-4 text-lg rounded-2xl"
+                    >
+                        {step === 5 ? 'Confirmar Reserva' : 'Continuar'}
+                    </Button>
+                </div>
+            )}
+        </div>
     </div>
   );
 };

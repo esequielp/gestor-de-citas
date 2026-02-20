@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar as CalendarIcon, Users, MapPin, LogOut, Clock, X, Link as LinkIcon, Plus, Trash2, CheckCircle, Sparkles, Scissors, Edit2, DollarSign, Activity, ChevronLeft, ChevronRight, List, User, Phone, Mail, History, LayoutDashboard, TrendingUp, AlertCircle, CalendarClock } from 'lucide-react';
+import { Calendar as CalendarIcon, Users, MapPin, LogOut, Clock, X, Link as LinkIcon, Plus, Trash2, CheckCircle, Sparkles, Scissors, Edit2, DollarSign, Activity, ChevronLeft, ChevronRight, List, User, Phone, Mail, History, LayoutDashboard, TrendingUp, AlertCircle, CalendarClock, Settings, Bell, Zap } from 'lucide-react';
 import { dataService } from '../services/dataService';
 import { Appointment, Branch, Employee, DaySchedule, TimeRange, Service, Client } from '../types';
 import { Button } from '../components/Button';
@@ -13,7 +13,7 @@ interface Props {
   onLogout: () => void;
 }
 
-type Tab = 'DASHBOARD' | 'APPOINTMENTS' | 'CLIENTS' | 'EMPLOYEES' | 'BRANCHES' | 'SERVICES';
+type Tab = 'DASHBOARD' | 'APPOINTMENTS' | 'CLIENTS' | 'EMPLOYEES' | 'BRANCHES' | 'SERVICES' | 'SETTINGS';
 type ViewMode = 'LIST' | 'CALENDAR';
 
 const DAYS_OF_WEEK = [
@@ -36,14 +36,93 @@ const iconBranch = new L.Icon({
     shadowSize: [41, 41]
 });
 
-// Component to handle map clicks and update coordinates
+// Component to handle map clicks, dragging and update coordinates
 const LocationPicker = ({ onLocationSelect, position }: { onLocationSelect: (lat: number, lng: number) => void, position: { lat: number, lng: number } | null }) => {
+    const markerRef = React.useRef<any>(null);
+
     useMapEvents({
         click(e) {
             onLocationSelect(e.latlng.lat, e.latlng.lng);
         },
     });
-    return position ? <Marker position={[position.lat, position.lng]} icon={iconBranch} /> : null;
+
+    const eventHandlers = React.useMemo(
+        () => ({
+            dragend() {
+                const marker = markerRef.current;
+                if (marker != null) {
+                    const { lat, lng } = marker.getLatLng();
+                    onLocationSelect(lat, lng);
+                }
+            },
+        }),
+        [onLocationSelect],
+    );
+
+    return position ? (
+        <Marker 
+            draggable={true}
+            eventHandlers={eventHandlers}
+            position={[position.lat, position.lng]} 
+            icon={iconBranch} 
+            ref={markerRef}
+        />
+    ) : null;
+};
+
+// Componente para manejar lista de tiempos
+const ReminderInputList = ({ label, value, onChange }: { label: string, value: string, onChange: (val: string) => void }) => {
+    const [inputValue, setInputValue] = useState('');
+    const items = value ? value.split(',').filter(x => x) : [];
+
+    const handleAdd = () => {
+        if (!inputValue || isNaN(Number(inputValue))) return;
+        if (items.length >= 3) {
+            alert("Máximo 3 recordatorios permitidos");
+            return;
+        }
+        const newItems = [...items, inputValue].sort((a,b) => Number(b) - Number(a)); // Ordenar descendente
+        onChange(newItems.join(','));
+        setInputValue('');
+    };
+
+    const handleRemove = (index: number) => {
+        const newItems = [...items];
+        newItems.splice(index, 1);
+        onChange(newItems.join(','));
+    };
+
+    return (
+        <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
+            <div className="flex gap-2 mb-2">
+                <div className="relative flex-1">
+                    <input 
+                        type="number"
+                        step="0.25"
+                        placeholder="Ej. 24 (horas antes)"
+                        value={inputValue}
+                        onChange={(e) => setInputValue(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                    <Clock className="absolute left-3 top-2.5 text-gray-400" size={18} />
+                </div>
+                <Button onClick={handleAdd} type="button" size="sm" disabled={items.length >= 3}>
+                    <Plus size={18} />
+                </Button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+                {items.map((item, idx) => (
+                    <span key={idx} className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-sm font-medium flex items-center gap-1">
+                        {item}h antes
+                        <button onClick={() => handleRemove(idx)} className="hover:text-red-500"><X size={14}/></button>
+                    </span>
+                ))}
+                {items.length === 0 && <span className="text-xs text-gray-400 italic">Sin recordatorios configurados</span>}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Agrega hasta 3 momentos (ej: 24h, 1h, 0.5h para 30min).</p>
+        </div>
+    );
 };
 
 const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
@@ -60,6 +139,15 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('CALENDAR');
   const [calendarDate, setCalendarDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [selectedBranchId, setSelectedBranchId] = useState<string>('');
+
+  // Settings State
+  const [reminderSettings, setReminderSettings] = useState({
+      emailReminders: "24",
+      whatsappReminders: "2",
+      n8nWebhookUrl: '',
+      n8nApiKey: ''
+  });
+  const [loadingSettings, setLoadingSettings] = useState(false);
 
   // --- Modals State ---
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
@@ -96,6 +184,43 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
       setSelectedBranchId(allBranches[0].id);
     }
   }, [refreshKey, selectedBranchId]);
+
+  // Fetch Settings when tab is active
+  useEffect(() => {
+      if (activeTab === 'SETTINGS') {
+          setLoadingSettings(true);
+          fetch('http://localhost:3001/api/settings/reminders')
+            .then(res => res.json())
+            .then(data => {
+                if(data && !data.error) setReminderSettings(data);
+            })
+            .catch(err => console.error("Error fetching settings (Backend might be offline):", err))
+            .finally(() => setLoadingSettings(false));
+      }
+  }, [activeTab]);
+
+  const handleSaveSettings = async () => {
+      try {
+          setLoadingSettings(true);
+          const res = await fetch('http://localhost:3001/api/settings/reminders', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(reminderSettings)
+          });
+          const data = await res.json();
+          if (res.ok) {
+              setReminderSettings(data);
+              alert('Configuración guardada exitosamente.');
+          } else {
+              alert('Error al guardar configuración.');
+          }
+      } catch (error) {
+          console.error(error);
+          alert('Error de conexión con el servidor.');
+      } finally {
+          setLoadingSettings(false);
+      }
+  };
 
   // --- Client Logic ---
 
@@ -291,7 +416,8 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
             { id: 'CLIENTS', icon: Users, label: 'Clientes' },
             { id: 'SERVICES', icon: Scissors, label: 'Servicios' },
             { id: 'EMPLOYEES', icon: User, label: 'Empleados' },
-            { id: 'BRANCHES', icon: MapPin, label: 'Sucursales' }
+            { id: 'BRANCHES', icon: MapPin, label: 'Sucursales' },
+            { id: 'SETTINGS', icon: Settings, label: 'Configuración' }
         ].map(item => (
             <button 
                 key={item.id}
@@ -489,6 +615,94 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
     );
   };
 
+  const renderSettings = () => (
+      <div className="space-y-6 animate-fade-in max-w-4xl">
+          <div className="flex flex-col gap-2">
+              <h2 className="text-2xl font-bold text-gray-800">Configuración del Sistema</h2>
+              <p className="text-gray-500">Gestiona recordatorios automáticos e integraciones.</p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6">
+              {/* Recordatorios */}
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 space-y-6">
+                  <div className="flex items-center gap-3 pb-4 border-b border-gray-100">
+                      <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600">
+                          <Bell size={24} />
+                      </div>
+                      <h3 className="font-bold text-lg text-gray-900">Recordatorios Automáticos</h3>
+                  </div>
+
+                  <div className="space-y-6">
+                      <ReminderInputList 
+                        label="Recordatorio Email" 
+                        value={reminderSettings.emailReminders} 
+                        onChange={(val) => setReminderSettings({...reminderSettings, emailReminders: val})}
+                      />
+
+                      <ReminderInputList 
+                        label="Recordatorio WhatsApp" 
+                        value={reminderSettings.whatsappReminders} 
+                        onChange={(val) => setReminderSettings({...reminderSettings, whatsappReminders: val})}
+                      />
+                  </div>
+              </div>
+
+              {/* Integración n8n */}
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 space-y-6">
+                  <div className="flex items-center gap-3 pb-4 border-b border-gray-100">
+                      <div className="p-2 bg-orange-50 rounded-lg text-orange-600">
+                          <Zap size={24} />
+                      </div>
+                      <h3 className="font-bold text-lg text-gray-900">Integración n8n</h3>
+                  </div>
+
+                  <div className="space-y-4">
+                      <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Webhook URL</label>
+                          <input 
+                              type="text" 
+                              placeholder="https://n8n.tu-dominio.com/webhook/..."
+                              value={reminderSettings.n8nWebhookUrl}
+                              onChange={(e) => setReminderSettings({...reminderSettings, n8nWebhookUrl: e.target.value})}
+                              className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm"
+                          />
+                      </div>
+
+                      <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">API Key (Header Authorization)</label>
+                          <input 
+                              type="password" 
+                              placeholder="Bearer token..."
+                              value={reminderSettings.n8nApiKey}
+                              onChange={(e) => setReminderSettings({...reminderSettings, n8nApiKey: e.target.value})}
+                              className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm"
+                          />
+                      </div>
+
+                      <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-blue-800">
+                          <p className="font-bold mb-1">Payload enviado a n8n:</p>
+                          <pre className="text-xs overflow-x-auto">
+{`{
+  "type": "whatsapp",
+  "trigger": "24h_before",
+  "cliente": "Juan Pérez",
+  "hora": "10:00",
+  ...
+}`}
+                          </pre>
+                      </div>
+                  </div>
+              </div>
+          </div>
+
+          <div className="flex justify-end">
+              <Button onClick={handleSaveSettings} disabled={loadingSettings} size="lg">
+                  {loadingSettings ? 'Guardando...' : 'Guardar Cambios'}
+              </Button>
+          </div>
+      </div>
+  );
+
   const renderCalendarView = () => {
     const branchEmployees = dataService.getEmployeesByBranch(selectedBranchId);
     
@@ -600,7 +814,7 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
         <div className="flex justify-between items-center">
             <h2 className="text-2xl font-bold text-gray-800">Directorio de Clientes</h2>
             <Button size="sm" onClick={() => setEditingClient({ name: '', phone: '', email: '' })}>
-                <Plus size={16} className="mr-2"/> Nuevo Cliente
+                <Plus size={16} className="mr-2"/> Nueva Cliente
             </Button>
         </div>
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -869,287 +1083,128 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
 
   const renderBranches = () => (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-800">Sucursales</h2>
-        <Button size="sm" onClick={() => setEditingBranch({
-            name: '', address: '', image: 'https://picsum.photos/400/200?random=' + Math.floor(Math.random() * 100), serviceIds: [],
-            lat: 6.17, lng: -75.60
-        })}><Plus size={16} className="mr-2"/> Nueva Sucursal</Button>
-      </div>
-      <div className="grid gap-6 md:grid-cols-2">
-         {branches.map(branch => (
-           <div key={branch.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
-             <div className="h-32 bg-gray-100 relative group">
-               <img src={branch.image} className="w-full h-full object-cover" alt={branch.name}/>
-               <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                 <button onClick={() => setEditingBranch(branch)} className="p-2 bg-white/90 hover:bg-white rounded-full text-indigo-600 shadow-sm transition-colors"><Edit2 size={16}/></button>
-                 <button onClick={() => { if(window.confirm('Eliminar sucursal?')) { dataService.deleteBranch(branch.id); setRefreshKey(prev => prev + 1); } }} className="p-2 bg-white/90 hover:bg-white rounded-full text-red-600 shadow-sm transition-colors"><Trash2 size={16}/></button>
-               </div>
-             </div>
-             <div className="p-5 flex-1 flex flex-col">
-               <div className="flex-1">
-                 <h3 className="text-lg font-bold text-gray-900 mb-1">{branch.name}</h3>
-                 <p className="text-gray-500 flex items-center gap-1 text-sm"><MapPin size={14}/> {branch.address}</p>
-                 <div className="mt-3 flex gap-2 flex-wrap">
-                     {services.filter(s => (branch.serviceIds || []).includes(s.id)).slice(0,3).map(s => (
-                         <span key={s.id} className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">{s.name}</span>
-                     ))}
-                     {(branch.serviceIds?.length || 0) > 3 && <span className="text-xs text-gray-400">+{branch.serviceIds.length - 3} más</span>}
-                 </div>
-               </div>
-               <button onClick={() => setEditingBranch(branch)} className="w-full mt-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors">Editar Sucursal</button>
-             </div>
-           </div>
-         ))}
-      </div>
+        <div className="flex justify-between items-center">
+            <h2 className="text-2xl font-bold text-gray-800">Sucursales</h2>
+            <Button size="sm" onClick={() => setEditingBranch({
+                name: '', address: '', image: '', 
+                lat: 6.1759, lng: -75.5917, serviceIds: []
+            })}>
+                <Plus size={16} className="mr-2"/> Nueva Sucursal
+            </Button>
+        </div>
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {branches.map(branch => (
+                <div key={branch.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-all group">
+                    <div className="h-40 bg-gray-200 relative">
+                        <img src={branch.image} alt={branch.name} className="w-full h-full object-cover"/>
+                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => setEditingBranch(branch)} className="p-2 bg-white rounded-full text-gray-700 hover:text-indigo-600 shadow-sm"><Edit2 size={16}/></button>
+                            <button onClick={() => {
+                                if(window.confirm('¿Eliminar sucursal?')) {
+                                    dataService.deleteBranch(branch.id);
+                                    setRefreshKey(prev=>prev+1);
+                                }
+                            }} className="p-2 bg-white rounded-full text-gray-700 hover:text-red-600 shadow-sm"><Trash2 size={16}/></button>
+                        </div>
+                    </div>
+                    <div className="p-4">
+                        <h3 className="font-bold text-lg text-gray-900 mb-1">{branch.name}</h3>
+                        <p className="text-sm text-gray-500 mb-3 flex items-start gap-1"><MapPin size={16} className="shrink-0 mt-0.5"/> {branch.address}</p>
+                        <div className="flex flex-wrap gap-1">
+                            {branch.serviceIds.slice(0,3).map(sid => {
+                                const s = services.find(srv=>srv.id===sid);
+                                return s ? <span key={sid} className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-600">{s.name}</span> : null;
+                            })}
+                            {branch.serviceIds.length > 3 && <span className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-500">+{branch.serviceIds.length - 3}</span>}
+                        </div>
+                    </div>
+                </div>
+            ))}
+        </div>
     </div>
   );
 
-  // --- Modals ---
-
-  const renderClientModal = () => {
-      if (!editingClient) return null;
-      return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
-                  <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-                      <h3 className="font-bold text-gray-800">{editingClient.id ? 'Editar Cliente' : 'Nuevo Cliente'}</h3>
-                      <button onClick={() => setEditingClient(null)}><X size={20} className="text-gray-500"/></button>
-                  </div>
-                  <div className="p-6 space-y-4">
-                      <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Nombre Completo</label>
-                          <input 
-                              type="text" 
-                              value={editingClient.name} 
-                              onChange={e => setEditingClient({...editingClient, name: e.target.value})}
-                              className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-gray-900"
-                              placeholder="Ej. Juan Pérez"
-                          />
-                      </div>
-                      <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono</label>
-                          <input 
-                              type="text" 
-                              value={editingClient.phone} 
-                              onChange={e => setEditingClient({...editingClient, phone: e.target.value})}
-                              className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-gray-900"
-                              placeholder="Ej. 555-1234"
-                          />
-                      </div>
-                      <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Email (Opcional)</label>
-                          <input 
-                              type="email" 
-                              value={editingClient.email} 
-                              onChange={e => setEditingClient({...editingClient, email: e.target.value})}
-                              className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-gray-900"
-                              placeholder="cliente@email.com"
-                          />
-                      </div>
-                  </div>
-                  <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
-                      <Button variant="secondary" onClick={() => setEditingClient(null)}>Cancelar</Button>
-                      <Button onClick={handleSaveClient}>Guardar</Button>
-                  </div>
-              </div>
-          </div>
-      );
-  };
-
-  const renderClientHistoryModal = () => {
-    if (!viewingClientHistory) return null;
-    const history = dataService.getAppointmentsByClient(viewingClientHistory.id);
-    const displayedHistory = history.slice(0, historyLimit);
-
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[80vh]">
-                <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-                    <div>
-                        <h3 className="font-bold text-gray-800">Historial de Citas</h3>
-                        <p className="text-sm text-gray-500">{viewingClientHistory.name}</p>
-                    </div>
-                    <button onClick={() => setViewingClientHistory(null)}><X size={20} className="text-gray-500"/></button>
-                </div>
-                <div className="flex-1 overflow-y-auto p-6">
-                    {history.length === 0 ? (
-                        <div className="text-center text-gray-400 py-8">Este cliente no tiene citas registradas.</div>
-                    ) : (
-                        <div className="space-y-3">
-                            {displayedHistory.map(appt => {
-                                const srv = services.find(s => s.id === appt.serviceId);
-                                const emp = employees.find(e => e.id === appt.employeeId);
-                                return (
-                                    <div key={appt.id} className="p-4 border border-gray-100 rounded-lg flex justify-between items-center hover:bg-gray-50">
-                                        <div>
-                                            <div className="font-medium text-gray-900">{srv?.name}</div>
-                                            <div className="text-sm text-gray-500 flex items-center gap-2">
-                                                <CalendarIcon size={12}/> {appt.date} 
-                                                <Clock size={12}/> {appt.time}:00
-                                            </div>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="text-sm text-indigo-600 font-medium">{emp?.name}</div>
-                                            <div className={`text-xs px-2 py-0.5 rounded-full inline-block ${appt.status === 'confirmed' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                                {appt.status}
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                            
-                            {history.length > historyLimit && (
-                                <button 
-                                    onClick={() => setHistoryLimit(prev => prev + 5)}
-                                    className="w-full py-2 text-sm text-indigo-600 font-medium hover:bg-indigo-50 rounded-lg mt-2 transition-colors"
-                                >
-                                    Cargar más citas ({history.length - historyLimit} restantes)...
-                                </button>
-                            )}
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-  };
-
-  const renderAppointmentModal = () => {
-      if (!editingAppointment) return null;
-      const branchEmps = dataService.getEmployeesByBranch(editingAppointment.branchId || selectedBranchId);
-      const branchServices = dataService.getServicesByBranch(editingAppointment.branchId || selectedBranchId);
-
-      return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
-                <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-                    <h3 className="font-bold text-gray-800">{editingAppointment.id ? 'Editar Cita' : 'Nueva Cita'}</h3>
-                    <button onClick={() => setEditingAppointment(null)}><X size={20} className="text-gray-500"/></button>
-                </div>
-                <div className="p-6 overflow-y-auto space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
-                        <div className="flex gap-2">
-                             <select 
-                                value={editingAppointment.clientId || ''}
-                                onChange={(e) => setEditingAppointment({...editingAppointment, clientId: e.target.value})}
-                                className="flex-1 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-gray-900"
-                             >
-                                <option value="">Seleccionar Cliente</option>
-                                {clients.map(c => <option key={c.id} value={c.id} className="text-gray-900">{c.name}</option>)}
-                             </select>
-                             <button 
-                                onClick={() => setEditingClient({ name: '', phone: '' })} // Open Client Modal
-                                className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100"
-                                title="Nuevo Cliente"
-                             >
-                                <Plus size={20}/>
-                             </button>
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
-                            <input 
-                                type="date"
-                                value={editingAppointment.date}
-                                onChange={(e) => setEditingAppointment({...editingAppointment, date: e.target.value})}
-                                className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-gray-900"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Hora</label>
-                            <select 
-                                value={editingAppointment.time}
-                                onChange={(e) => setEditingAppointment({...editingAppointment, time: Number(e.target.value)})}
-                                className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-gray-900"
-                            >
-                                {HOURS_OF_OPERATION.map(h => <option key={h} value={h} className="text-gray-900">{h}:00</option>)}
-                            </select>
-                        </div>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Servicio</label>
-                        <select 
-                            value={editingAppointment.serviceId}
-                            onChange={(e) => setEditingAppointment({...editingAppointment, serviceId: e.target.value})}
-                            className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-gray-900"
-                        >
-                            <option value="">Seleccionar Servicio</option>
-                            {branchServices.map(s => <option key={s.id} value={s.id} className="text-gray-900">{s.name} ({s.duration} min)</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Profesional</label>
-                        <select 
-                            value={editingAppointment.employeeId}
-                            onChange={(e) => setEditingAppointment({...editingAppointment, employeeId: e.target.value})}
-                            className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-gray-900"
-                        >
-                            <option value="">Seleccionar Profesional</option>
-                            {branchEmps.filter(e => !editingAppointment.serviceId || e.serviceIds.includes(editingAppointment.serviceId!)).map(e => (
-                                <option key={e.id} value={e.id} className="text-gray-900">{e.name}</option>
-                            ))}
-                        </select>
-                    </div>
-                </div>
-                <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
-                    {editingAppointment.id && (
-                        <Button variant="danger" onClick={() => handleDeleteAppointment(editingAppointment.id!)}>Eliminar</Button>
-                    )}
-                    <Button variant="secondary" onClick={() => setEditingAppointment(null)}>Cancelar</Button>
-                    <Button onClick={handleSaveAppointment}>Guardar</Button>
-                </div>
-             </div>
-        </div>
-      );
-  };
-
   const renderScheduleEditor = () => {
     if (!editingEmployee) return null;
-    const currentSchedule = getCurrentDaySchedule();
+    const currentDay = getCurrentDaySchedule();
+
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col">
-          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 shrink-0">
-             <h3 className="font-bold text-gray-800">Horario: {editingEmployee.name}</h3>
-             <button onClick={() => setEditingEmployee(null)}><X size={20}/></button>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+        <div className="bg-white rounded-xl p-6 max-w-2xl w-full h-[80vh] flex flex-col">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+                <h3 className="text-xl font-bold text-gray-900">Horario de {editingEmployee.name}</h3>
+                <p className="text-sm text-gray-500">Configura la disponibilidad semanal</p>
+            </div>
+            <button onClick={() => setEditingEmployee(null)} className="text-gray-400 hover:text-gray-600"><X size={24}/></button>
           </div>
-          <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
-             <div className="w-full md:w-48 border-b md:border-b-0 md:border-r border-gray-100 bg-gray-50 p-2 overflow-y-auto">
-                <div className="space-y-1">
-                   {DAYS_OF_WEEK.map(day => (
-                       <button key={day.id} onClick={() => setSelectedDayId(day.id)} className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-all flex justify-between items-center ${selectedDayId === day.id ? 'bg-white shadow-sm ring-1 ring-gray-200 text-indigo-600' : 'text-gray-600 hover:bg-gray-100'}`}>
-                         <span>{day.full}</span>
-                         <span className={`w-2 h-2 rounded-full ${tempSchedule.find(s=>s.dayOfWeek===day.id)?.isWorkDay ? 'bg-green-500' : 'bg-gray-300'}`}></span>
-                       </button>
-                   ))}
-                </div>
+
+          <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
+            {DAYS_OF_WEEK.map(day => (
+                <button
+                    key={day.id}
+                    onClick={() => setSelectedDayId(day.id)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${selectedDayId === day.id ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                >
+                    {day.full}
+                </button>
+            ))}
+          </div>
+
+          <div className="flex-1 bg-gray-50 rounded-xl p-6 border border-gray-100 overflow-y-auto">
+             <div className="flex justify-between items-center mb-6">
+                 <span className="font-semibold text-gray-700">Estado del {DAYS_OF_WEEK.find(d => d.id === selectedDayId)?.full}</span>
+                 <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" className="sr-only peer" checked={currentDay.isWorkDay} onChange={toggleDayStatus} />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                    <span className="ml-3 text-sm font-medium text-gray-900">{currentDay.isWorkDay ? 'Laborable' : 'Descanso'}</span>
+                </label>
              </div>
-             <div className="flex-1 p-6 overflow-y-auto bg-white">
-                <div className="flex justify-between items-center mb-6">
-                   <h4 className="text-xl font-bold text-gray-800">{DAYS_OF_WEEK.find(d => d.id === selectedDayId)?.full}</h4>
-                   <button onClick={toggleDayStatus} className={`px-4 py-2 rounded-full text-sm font-medium transition-colors border ${currentSchedule.isWorkDay ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-600'}`}>{currentSchedule.isWorkDay ? 'Laborable' : 'Descanso'}</button>
-                </div>
-                {currentSchedule.isWorkDay && (
-                  <div className="space-y-4">
-                     {currentSchedule.ranges.map((range, idx) => (
-                       <div key={idx} className="flex items-center gap-3">
-                          <select value={range.start} onChange={(e) => updateRange(idx, 'start', Number(e.target.value))} className="p-2 border rounded bg-white text-gray-900">{HOURS_OF_OPERATION.map(h => <option key={h} value={h}>{h}:00</option>)}</select>
-                          <span>-</span>
-                          <select value={range.end} onChange={(e) => updateRange(idx, 'end', Number(e.target.value))} className="p-2 border rounded bg-white text-gray-900">{HOURS_OF_OPERATION.map(h => <option key={h} value={h} disabled={h <= range.start}>{h}:00</option>)}</select>
-                          <button onClick={() => removeRange(idx)} className="text-red-500"><Trash2 size={18} /></button>
-                       </div>
+
+             {currentDay.isWorkDay && (
+                 <div className="space-y-4">
+                     <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-medium text-gray-700">Turnos de trabajo</h4>
+                        <button onClick={addRange} className="text-indigo-600 text-sm hover:underline font-medium">+ Agregar Turno</button>
+                     </div>
+                     
+                     {currentDay.ranges.map((range, idx) => (
+                         <div key={idx} className="flex items-center gap-4 bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+                             <div className="flex-1 grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-xs text-gray-500 block mb-1">Inicio</label>
+                                    <select 
+                                        value={range.start} 
+                                        onChange={(e) => updateRange(idx, 'start', Number(e.target.value))}
+                                        className="w-full p-2 bg-gray-50 border border-gray-200 rounded text-sm"
+                                    >
+                                        {HOURS_OF_OPERATION.map(h => <option key={h} value={h}>{h}:00</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-xs text-gray-500 block mb-1">Fin</label>
+                                    <select 
+                                        value={range.end} 
+                                        onChange={(e) => updateRange(idx, 'end', Number(e.target.value))}
+                                        className="w-full p-2 bg-gray-50 border border-gray-200 rounded text-sm"
+                                    >
+                                        {HOURS_OF_OPERATION.map(h => <option key={h} value={h}>{h}:00</option>)}
+                                    </select>
+                                </div>
+                             </div>
+                             <button onClick={() => removeRange(idx)} className="text-red-500 hover:bg-red-50 p-2 rounded"><Trash2 size={16}/></button>
+                         </div>
                      ))}
-                     <button onClick={addRange} className="text-indigo-600 text-sm flex items-center gap-1"><Plus size={14}/> Agregar turno</button>
-                  </div>
-                )}
-             </div>
+                     {currentDay.ranges.length === 0 && (
+                         <p className="text-sm text-orange-600 bg-orange-50 p-3 rounded-lg">Agrega al menos un turno o marca como descanso.</p>
+                     )}
+                 </div>
+             )}
           </div>
-          <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
-            <Button variant="secondary" onClick={() => setEditingEmployee(null)}>Cancelar</Button>
-            <Button onClick={handleSaveSchedule}>Guardar</Button>
+
+          <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-gray-100">
+             <Button variant="secondary" onClick={() => setEditingEmployee(null)}>Cancelar</Button>
+             <Button onClick={handleSaveSchedule}>Guardar Horario</Button>
           </div>
         </div>
       </div>
@@ -1157,56 +1212,289 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
   };
 
   const renderServiceAssignModal = () => {
-      if (!assigningServicesEmployee) return null;
+      if(!assigningServicesEmployee) return null;
       return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-              <div className="bg-white rounded-lg p-6 max-w-md w-full">
-                  <h3 className="font-bold mb-4">Servicios: {assigningServicesEmployee.name}</h3>
-                  <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
-                      {services.map(s => (
-                          <div key={s.id} onClick={() => setTempServiceIds(prev => prev.includes(s.id) ? prev.filter(x=>x!==s.id) : [...prev, s.id])} className={`p-3 border rounded cursor-pointer flex justify-between ${tempServiceIds.includes(s.id) ? 'bg-indigo-50 border-indigo-500 text-indigo-900' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>
-                              <span>{s.name}</span>
-                              {tempServiceIds.includes(s.id) && <CheckCircle size={16} className="text-indigo-600"/>}
-                          </div>
-                      ))}
-                  </div>
-                  <div className="flex justify-end gap-2">
-                      <Button variant="secondary" onClick={() => setAssigningServicesEmployee(null)}>Cancelar</Button>
-                      <Button onClick={() => {
-                          dataService.updateEmployee({...assigningServicesEmployee, serviceIds: tempServiceIds});
-                          setAssigningServicesEmployee(null);
-                          setRefreshKey(prev => prev + 1);
-                      }}>Guardar</Button>
-                  </div>
-              </div>
+            <div className="bg-white rounded-xl p-6 max-w-md w-full flex flex-col max-h-[80vh]">
+                <h3 className="font-bold text-xl mb-4">Asignar Servicios</h3>
+                <p className="text-sm text-gray-500 mb-4">Selecciona los servicios que {assigningServicesEmployee.name} puede realizar.</p>
+                
+                <div className="flex-1 overflow-y-auto border border-gray-100 rounded-lg p-2 space-y-1 mb-4">
+                    {services.map(srv => {
+                        const isSelected = tempServiceIds.includes(srv.id);
+                        return (
+                            <div 
+                                key={srv.id} 
+                                onClick={() => {
+                                    if(isSelected) setTempServiceIds(prev => prev.filter(id => id !== srv.id));
+                                    else setTempServiceIds(prev => [...prev, srv.id]);
+                                }}
+                                className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors ${isSelected ? 'bg-indigo-50 border border-indigo-200' : 'hover:bg-gray-50 border border-transparent'}`}
+                            >
+                                <span className={`text-sm ${isSelected ? 'font-medium text-indigo-900' : 'text-gray-700'}`}>{srv.name}</span>
+                                {isSelected && <CheckCircle size={16} className="text-indigo-600"/>}
+                            </div>
+                        )
+                    })}
+                </div>
+                
+                <div className="flex justify-end gap-2">
+                    <Button variant="secondary" onClick={() => setAssigningServicesEmployee(null)}>Cancelar</Button>
+                    <Button onClick={() => {
+                        const updated = { ...assigningServicesEmployee, serviceIds: tempServiceIds };
+                        dataService.updateEmployee(updated);
+                        setAssigningServicesEmployee(null);
+                        setRefreshKey(prev => prev+1);
+                    }}>Guardar</Button>
+                </div>
+            </div>
           </div>
       )
-  }
+  };
 
   const renderEmployeeProfileModal = () => {
     if(!editingEmployeeProfile) return null;
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <div className="bg-white rounded-lg p-6 max-w-md w-full space-y-4">
-                <h3 className="font-bold">Editar Empleado</h3>
-                <input placeholder="Nombre" value={editingEmployeeProfile.name} onChange={e=>setEditingEmployeeProfile({...editingEmployeeProfile, name: e.target.value})} className="w-full border p-2 rounded bg-white text-gray-900"/>
-                <input placeholder="Rol" value={editingEmployeeProfile.role} onChange={e=>setEditingEmployeeProfile({...editingEmployeeProfile, role: e.target.value})} className="w-full border p-2 rounded bg-white text-gray-900"/>
-                <select value={editingEmployeeProfile.branchId} onChange={e=>setEditingEmployeeProfile({...editingEmployeeProfile, branchId: e.target.value})} className="w-full border p-2 rounded bg-white text-gray-900">
-                    {branches.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
-                <div className="flex justify-end gap-2">
-                    <Button variant="secondary" onClick={()=>setEditingEmployeeProfile(null)}>Cancelar</Button>
+            <div className="bg-white rounded-xl p-6 max-w-md w-full space-y-4">
+                <h3 className="font-bold text-xl mb-2">{editingEmployeeProfile.id ? 'Editar Empleado' : 'Nuevo Empleado'}</h3>
+                
+                <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Nombre Completo</label>
+                    <input 
+                        className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" 
+                        value={editingEmployeeProfile.name} 
+                        onChange={e => setEditingEmployeeProfile({...editingEmployeeProfile, name: e.target.value})}
+                    />
+                </div>
+
+                <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Cargo / Rol</label>
+                    <input 
+                        className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" 
+                        value={editingEmployeeProfile.role} 
+                        onChange={e => setEditingEmployeeProfile({...editingEmployeeProfile, role: e.target.value})}
+                    />
+                </div>
+
+                <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Sucursal Base</label>
+                    <select 
+                        className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" 
+                        value={editingEmployeeProfile.branchId} 
+                        onChange={e => setEditingEmployeeProfile({...editingEmployeeProfile, branchId: e.target.value})}
+                    >
+                        <option value="">Seleccionar Sucursal</option>
+                        {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                    </select>
+                </div>
+
+                 <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Avatar URL</label>
+                    <input 
+                        className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" 
+                        value={editingEmployeeProfile.avatar} 
+                        onChange={e => setEditingEmployeeProfile({...editingEmployeeProfile, avatar: e.target.value})}
+                    />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4">
+                    <Button variant="secondary" onClick={() => setEditingEmployeeProfile(null)}>Cancelar</Button>
                     <Button onClick={() => {
-                        if(editingEmployeeProfile.id) dataService.updateEmployee(editingEmployeeProfile as Employee);
-                        else dataService.addEmployee(editingEmployeeProfile as Employee);
+                        if (editingEmployeeProfile.id) {
+                            dataService.updateEmployee(editingEmployeeProfile as Employee);
+                        } else {
+                            dataService.addEmployee({
+                                name: editingEmployeeProfile.name!,
+                                role: editingEmployeeProfile.role!,
+                                branchId: editingEmployeeProfile.branchId!,
+                                avatar: editingEmployeeProfile.avatar || 'https://via.placeholder.com/100',
+                                weeklySchedule: editingEmployeeProfile.weeklySchedule || [],
+                                serviceIds: editingEmployeeProfile.serviceIds || []
+                            });
+                        }
                         setEditingEmployeeProfile(null);
-                        setRefreshKey(prev=>prev+1);
+                        setRefreshKey(prev => prev + 1);
                     }}>Guardar</Button>
                 </div>
             </div>
         </div>
     )
-  }
+  };
+
+  const renderClientModal = () => {
+      if(!editingClient) return null;
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <div className="bg-white rounded-xl p-6 max-w-md w-full space-y-4">
+                <h3 className="font-bold text-xl">{editingClient.id ? 'Editar Cliente' : 'Nuevo Cliente'}</h3>
+                <input placeholder="Nombre" value={editingClient.name} onChange={e=>setEditingClient({...editingClient, name: e.target.value})} className="w-full border p-2 rounded"/>
+                <input placeholder="Teléfono" value={editingClient.phone} onChange={e=>setEditingClient({...editingClient, phone: e.target.value})} className="w-full border p-2 rounded"/>
+                <input placeholder="Email" value={editingClient.email} onChange={e=>setEditingClient({...editingClient, email: e.target.value})} className="w-full border p-2 rounded"/>
+                <div className="flex justify-end gap-2">
+                    <Button variant="secondary" onClick={()=>setEditingClient(null)}>Cancelar</Button>
+                    <Button onClick={handleSaveClient}>Guardar</Button>
+                </div>
+            </div>
+        </div>
+      );
+  };
+
+  const renderAppointmentModal = () => {
+      if(!editingAppointment) return null;
+
+      // Filter employees by selected branch in modal or default
+      const modalBranchId = editingAppointment.branchId || selectedBranchId;
+      const modalEmployees = dataService.getEmployeesByBranch(modalBranchId);
+      // Filter services by branch
+      const modalServices = dataService.getServicesByBranch(modalBranchId);
+
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+             <div className="bg-white rounded-xl p-6 max-w-lg w-full space-y-4 max-h-[90vh] overflow-y-auto">
+                <div className="flex justify-between items-center">
+                    <h3 className="font-bold text-xl">{editingAppointment.id ? 'Editar Cita' : 'Nueva Cita'}</h3>
+                    <button onClick={()=>setEditingAppointment(null)}><X size={20}/></button>
+                </div>
+
+                <div className="space-y-3">
+                    {/* Branch Selection */}
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase">Sucursal</label>
+                        <select 
+                            value={editingAppointment.branchId || ''} 
+                            onChange={e => setEditingAppointment({ ...editingAppointment, branchId: e.target.value, employeeId: '', serviceId: '' })}
+                            className="w-full p-2 border rounded bg-white"
+                        >
+                            <option value="">Seleccionar Sucursal</option>
+                            {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                        </select>
+                    </div>
+
+                    {/* Client Selection (Simplified for Admin) */}
+                    <div>
+                         <label className="text-xs font-bold text-gray-500 uppercase">Cliente</label>
+                         <select 
+                            value={editingAppointment.clientId || ''}
+                            onChange={e => setEditingAppointment({ ...editingAppointment, clientId: e.target.value })}
+                            className="w-full p-2 border rounded bg-white"
+                         >
+                            <option value="">Seleccionar Cliente</option>
+                            {clients.map(c => <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>)}
+                         </select>
+                         <p className="text-xs text-gray-400 mt-1">¿Cliente nuevo? Créalo primero en la pestaña Clientes.</p>
+                    </div>
+
+                    {/* Service Selection */}
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase">Servicio</label>
+                        <select 
+                            value={editingAppointment.serviceId || ''} 
+                            onChange={e => setEditingAppointment({ ...editingAppointment, serviceId: e.target.value })}
+                            className="w-full p-2 border rounded bg-white"
+                            disabled={!editingAppointment.branchId}
+                        >
+                            <option value="">Seleccionar Servicio</option>
+                            {modalServices.map(s => <option key={s.id} value={s.id}>{s.name} ({s.duration} min)</option>)}
+                        </select>
+                    </div>
+
+                    {/* Employee Selection */}
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase">Profesional</label>
+                        <select 
+                            value={editingAppointment.employeeId || ''} 
+                            onChange={e => setEditingAppointment({ ...editingAppointment, employeeId: e.target.value })}
+                            className="w-full p-2 border rounded bg-white"
+                            disabled={!editingAppointment.branchId || !editingAppointment.serviceId}
+                        >
+                            <option value="">Seleccionar Profesional</option>
+                            {modalEmployees.filter(e => e.serviceIds.includes(editingAppointment.serviceId!)).map(e => (
+                                <option key={e.id} value={e.id}>{e.name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="text-xs font-bold text-gray-500 uppercase">Fecha</label>
+                            <input 
+                                type="date" 
+                                value={editingAppointment.date || ''}
+                                onChange={e => setEditingAppointment({...editingAppointment, date: e.target.value})}
+                                className="w-full p-2 border rounded"
+                            />
+                        </div>
+                        <div>
+                             <label className="text-xs font-bold text-gray-500 uppercase">Hora</label>
+                             <select 
+                                value={editingAppointment.time || ''}
+                                onChange={e => setEditingAppointment({...editingAppointment, time: Number(e.target.value)})}
+                                className="w-full p-2 border rounded bg-white"
+                             >
+                                 <option value="">Hora</option>
+                                 {HOURS_OF_OPERATION.map(h => <option key={h} value={h}>{h}:00</option>)}
+                             </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="pt-4 flex justify-end gap-2">
+                    <Button variant="secondary" onClick={()=>setEditingAppointment(null)}>Cancelar</Button>
+                    <Button onClick={handleSaveAppointment}>Guardar Cita</Button>
+                </div>
+             </div>
+        </div>
+      );
+  };
+
+  const renderClientHistoryModal = () => {
+      if(!viewingClientHistory) return null;
+      const history = dataService.getAppointmentsByClient(viewingClientHistory.id);
+      
+      return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+             <div className="bg-white rounded-xl p-6 max-w-2xl w-full flex flex-col max-h-[80vh]">
+                 <div className="flex justify-between items-center mb-6">
+                     <div>
+                         <h3 className="text-xl font-bold">Historial de {viewingClientHistory.name}</h3>
+                         <p className="text-sm text-gray-500">{viewingClientHistory.email} • {viewingClientHistory.phone}</p>
+                     </div>
+                     <button onClick={() => setViewingClientHistory(null)} className="p-2 hover:bg-gray-100 rounded-full"><X size={20}/></button>
+                 </div>
+
+                 <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+                     {history.length === 0 ? (
+                         <div className="text-center py-10 text-gray-400">Sin citas registradas.</div>
+                     ) : (
+                         history.slice(0, historyLimit).map(appt => {
+                             const srv = services.find(s => s.id === appt.serviceId);
+                             const emp = employees.find(e => e.id === appt.employeeId);
+                             const br = branches.find(b => b.id === appt.branchId);
+                             return (
+                                 <div key={appt.id} className="border border-gray-100 rounded-lg p-4 flex justify-between items-center hover:bg-gray-50">
+                                     <div>
+                                         <h4 className="font-bold text-gray-900">{srv?.name}</h4>
+                                         <p className="text-sm text-gray-500">{appt.date} a las {appt.time}:00</p>
+                                         <p className="text-xs text-indigo-600 mt-1">{emp?.name} @ {br?.name}</p>
+                                     </div>
+                                     <span className={`px-2 py-1 rounded text-xs font-medium ${appt.status === 'confirmed' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                         {appt.status}
+                                     </span>
+                                 </div>
+                             );
+                         })
+                     )}
+                     {history.length > historyLimit && (
+                         <button onClick={() => setHistoryLimit(prev => prev + 5)} className="w-full py-2 text-sm text-indigo-600 hover:bg-indigo-50 rounded-lg">
+                             Cargar más
+                         </button>
+                     )}
+                 </div>
+             </div>
+          </div>
+      );
+  };
 
   const renderBranchModal = () => {
     if(!editingBranch) return null;
@@ -1292,7 +1580,7 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                                 />
                              </MapContainer>
                              <div className="absolute bottom-2 left-2 bg-white/90 px-2 py-1 text-xs rounded shadow-sm z-[1000]">
-                                 Click en el mapa para ubicar
+                                 Click o arrastra el marcador para ubicar
                              </div>
                          </div>
                     </div>
@@ -1377,6 +1665,7 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
            <button onClick={() => setActiveTab('APPOINTMENTS')} className="px-4 py-2 rounded-full bg-white text-sm whitespace-nowrap">Citas</button>
            <button onClick={() => setActiveTab('CLIENTS')} className="px-4 py-2 rounded-full bg-white text-sm whitespace-nowrap">Clientes</button>
            <button onClick={() => setActiveTab('SERVICES')} className="px-4 py-2 rounded-full bg-white text-sm whitespace-nowrap">Servicios</button>
+           <button onClick={() => setActiveTab('SETTINGS')} className="px-4 py-2 rounded-full bg-white text-sm whitespace-nowrap">Config</button>
         </div>
 
         {activeTab === 'DASHBOARD' && renderOverview()}
@@ -1385,6 +1674,7 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
         {activeTab === 'SERVICES' && renderServices()}
         {activeTab === 'EMPLOYEES' && renderEmployees()}
         {activeTab === 'BRANCHES' && renderBranches()}
+        {activeTab === 'SETTINGS' && renderSettings()}
       </main>
 
       {renderScheduleEditor()}

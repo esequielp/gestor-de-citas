@@ -3,6 +3,7 @@ import { ViewState } from './types';
 import BookingWizard from './views/BookingWizard';
 import AdminDashboard from './views/AdminDashboard';
 import LandingPage from './views/LandingPage';
+import B2BLandingPage from './views/B2BLandingPage';
 import { Button } from './components/Button';
 
 const App: React.FC = () => {
@@ -12,6 +13,9 @@ const App: React.FC = () => {
       const params = new URLSearchParams(window.location.search);
       if (params.get('view') === 'booking') {
         return 'BOOKING';
+      }
+      if (params.get('view') === 'b2b') {
+        return 'B2B_LANDING';
       }
     }
     return 'LANDING';
@@ -23,7 +27,10 @@ const App: React.FC = () => {
   useEffect(() => {
     const handlePopState = () => {
       const params = new URLSearchParams(window.location.search);
-      if (params.get('view') === 'booking') setView('BOOKING');
+      const viewParam = params.get('view');
+      
+      if (viewParam === 'booking') setView('BOOKING');
+      else if (viewParam === 'b2b') setView('B2B_LANDING');
       else setView('LANDING');
     };
     window.addEventListener('popstate', handlePopState);
@@ -45,6 +52,8 @@ const App: React.FC = () => {
     switch (view) {
       case 'LANDING':
         return <LandingPage onNavigate={(target) => setView(target)} />;
+      case 'B2B_LANDING':
+        return <B2BLandingPage onNavigate={(target) => setView(target)} />;
       case 'BOOKING':
         return <BookingWizard onBack={handleGoHome} />;
       case 'ADMIN_LOGIN':
@@ -69,7 +78,10 @@ const App: React.FC = () => {
                   <input type="password" className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="••••" defaultValue="admin" />
                 </div>
                 <Button fullWidth type="submit">Entrar</Button>
-                <Button fullWidth variant="secondary" type="button" onClick={handleGoHome}>Volver al Inicio</Button>
+                <div className="flex gap-2">
+                    <Button fullWidth variant="secondary" type="button" onClick={handleGoHome}>Inicio</Button>
+                    <Button fullWidth variant="secondary" type="button" onClick={() => setView('B2B_LANDING')}>Info B2B</Button>
+                </div>
               </form>
             </div>
           </div>
