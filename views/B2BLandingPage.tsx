@@ -82,14 +82,20 @@ const B2BLandingPage: React.FC<Props> = ({ onNavigate }) => {
               </button>
            </div>
            
-           {/* UI Mockup Placeholder */}
-           <div className="mt-20 relative mx-auto max-w-5xl rounded-2xl shadow-2xl border border-slate-200 bg-slate-900 overflow-hidden animate-fade-in-up delay-300">
-              <div className="absolute top-0 w-full h-8 bg-slate-800 flex items-center gap-2 px-4">
+           {/* UI Mockup Placeholder - FIXED IMAGE URL */}
+           <div className="mt-20 relative mx-auto max-w-5xl rounded-2xl shadow-2xl border border-slate-200 bg-slate-800 overflow-hidden animate-fade-in-up delay-300 min-h-[300px] md:min-h-[500px]">
+              <div className="absolute top-0 w-full h-8 bg-slate-900 flex items-center gap-2 px-4 z-10 border-b border-slate-700">
                  <div className="w-3 h-3 rounded-full bg-red-500"></div>
                  <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
                  <div className="w-3 h-3 rounded-full bg-green-500"></div>
               </div>
-              <img src="https://cdn.dribbble.com/users/1615584/screenshots/15664673/media/4c12579048a6062a4d360f553f14064a.jpg?resize=1600x1200&vertical=center" alt="Dashboard Preview" className="w-full h-auto opacity-90 mt-8"/>
+              <img 
+                src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?ixlib=rb-4.0.3&auto=format&fit=crop&w=2670&q=80" 
+                alt="Dashboard Preview" 
+                className="w-full h-full object-cover opacity-95 pt-8"
+              />
+              {/* Overlay gradient to blend bottom */}
+              <div className="absolute bottom-0 w-full h-24 bg-gradient-to-t from-slate-900/20 to-transparent"></div>
            </div>
         </div>
       </section>

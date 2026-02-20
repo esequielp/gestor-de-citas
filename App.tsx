@@ -11,12 +11,11 @@ const App: React.FC = () => {
   const getInitialView = (): ViewState => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      if (params.get('view') === 'booking') {
-        return 'BOOKING';
-      }
-      if (params.get('view') === 'b2b') {
-        return 'B2B_LANDING';
-      }
+      const viewParam = params.get('view');
+
+      if (viewParam === 'booking') return 'BOOKING';
+      if (viewParam === 'b2b') return 'B2B_LANDING';
+      if (viewParam === 'admin') return 'ADMIN_LOGIN';
     }
     return 'LANDING';
   };
@@ -31,6 +30,7 @@ const App: React.FC = () => {
       
       if (viewParam === 'booking') setView('BOOKING');
       else if (viewParam === 'b2b') setView('B2B_LANDING');
+      else if (viewParam === 'admin') setView('ADMIN_LOGIN');
       else setView('LANDING');
     };
     window.addEventListener('popstate', handlePopState);
