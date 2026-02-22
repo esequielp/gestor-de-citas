@@ -52,6 +52,11 @@ const BookingWizard: React.FC<Props> = ({ onBack }) => {
   const [filteredBranches, setFilteredBranches] = useState<(Branch & { distance?: number })[]>([]);
   const [allServices, setAllServices] = useState<Service[]>([]);
   
+  // Availability State
+  const [availableSlots, setAvailableSlots] = useState<number[]>([]);
+  const [availableEmployeeIds, setAvailableEmployeeIds] = useState<string[]>([]);
+  const [loadingAvailability, setLoadingAvailability] = useState(false);
+
   // Selection State
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
@@ -72,20 +77,63 @@ const BookingWizard: React.FC<Props> = ({ onBack }) => {
 
   // Initial Load
   useEffect(() => {
-    setAllBranches(dataService.getBranches());
-    setAllServices(dataService.getServices().filter(s => s.active));
+    const loadData = async () => {
+        const branches = await dataService.getBranches();
+        const services = await dataService.getServices();
+        setAllBranches(branches);
+        setAllServices(services.filter(s => s.isActive)); // Changed from .active to .isActive based on schema
+    };
+    loadData();
     
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     setSelectedDate(tomorrow.toISOString().split('T')[0]);
   }, []);
 
+  // Fetch Available Slots when Date/Branch/Service changes
+  useEffect(() => {
+      const fetchSlots = async () => {
+          if (!selectedBranch || !selectedDate || !selectedService) return;
+          setLoadingAvailability(true);
+          const slots: number[] = [];
+          for (const hour of HOURS_OF_OPERATION) {
+              // This is N+1 but acceptable for MVP. Ideally backend returns all slots.
+              const employees = await dataService.getAvailableEmployeesForSlot(selectedBranch.id, selectedDate, hour, selectedService.id);
+              if (employees.length > 0) {
+                  slots.push(hour);
+              }
+          }
+          setAvailableSlots(slots);
+          setLoadingAvailability(false);
+      };
+      fetchSlots();
+  }, [selectedBranch, selectedDate, selectedService]);
+
+  // Fetch Available Employees when Time changes
+  useEffect(() => {
+      const fetchEmployees = async () => {
+          if (!selectedBranch || !selectedDate || !selectedTime || !selectedService) return;
+          setLoadingAvailability(true);
+          const employees = await dataService.getAvailableEmployeesForSlot(selectedBranch.id, selectedDate, selectedTime, selectedService.id);
+          setAvailableEmployeeIds(employees.map(e => e.id));
+          setLoadingAvailability(false);
+      };
+      fetchEmployees();
+  }, [selectedBranch, selectedDate, selectedTime, selectedService]);
+
   // Filter Logic
   useEffect(() => {
     let relevantBranches = allBranches;
     if (selectedService) {
-        relevantBranches = relevantBranches.filter(b => b.serviceIds.includes(selectedService.id));
+        // Check if branch has service. In schema it's many-to-many.
+        // Frontend mock assumed branch.serviceIds.
+        // We need to ensure Branch type has serviceIds or we filter differently.
+        // The mock dataService.getBranches returns Branch which has serviceIds.
+        // If we use real API, we need to make sure the response includes serviceIds or we fetch them.
+        // For now assuming API returns compatible structure.
+        relevantBranches = relevantBranches.filter(b => b.serviceIds && b.serviceIds.includes(selectedService.id));
     }
+    
     if (userLocation) {
         const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
             const R = 6371; 
@@ -128,10 +176,10 @@ const BookingWizard: React.FC<Props> = ({ onBack }) => {
   };
 
   // --- Handlers ---
-  const handleFinalBooking = () => {
+  const handleFinalBooking = async () => {
     if (!selectedBranch || !selectedEmployee || !selectedTime || !selectedService) return;
-    const client = dataService.getOrCreateClient(clientName, clientEmail, clientPhone);
-    dataService.addAppointment({
+    const client = await dataService.getOrCreateClient(clientName, clientEmail, clientPhone);
+    await dataService.addAppointment({
       branchId: selectedBranch.id,
       employeeId: selectedEmployee.id,
       serviceId: selectedService.id,
@@ -311,10 +359,10 @@ const BookingWizard: React.FC<Props> = ({ onBack }) => {
               </div>
 
               <div className="space-y-2">
-                  <label className="text-sm font-bold text-gray-700 ml-1">Horarios Disponibles</label>
+                  <label className="text-sm font-bold text-gray-700 ml-1">Horarios Disponibles {loadingAvailability && <span className="text-xs font-normal text-indigo-500 animate-pulse">(Cargando...)</span>}</label>
                   <div className="grid grid-cols-4 gap-3">
                       {HOURS_OF_OPERATION.map(hour => {
-                          const hasAvailability = dataService.getAvailableEmployeesForSlot(selectedBranch!.id, selectedDate, hour, selectedService!.id).length > 0;
+                          const hasAvailability = availableSlots.includes(hour);
                           const isSelected = selectedTime === hour;
                           
                           return (
@@ -343,8 +391,32 @@ const BookingWizard: React.FC<Props> = ({ onBack }) => {
 
   // STEP 4: PROFESSIONAL
   const renderProfessional = () => {
-    const eligibleEmployees = dataService.getEmployeesByBranch(selectedBranch!.id)
-                                         .filter(e => e.serviceIds.includes(selectedService!.id));
+    // We need to fetch employees for the branch. This is async in dataService but we loaded allBranches which has serviceIds.
+    // However, we need the Employee objects.
+    // We can assume we need to fetch them or we can use the ones we might have loaded if we loaded all employees.
+    // But we didn't load all employees in initial load of BookingWizard.
+    // We should probably fetch employees for the branch when branch is selected.
+    // For now, let's use a new useEffect to load employees for the selected branch or just use the availableEmployeeIds which contains the full objects if we change getAvailableEmployeesForSlot to return objects.
+    // dataService.getAvailableEmployeesForSlot returns Promise<Employee[]>.
+    // So availableEmployeeIds should actually be availableEmployees (objects).
+    
+    // Let's check the state definition:
+    // const [availableEmployeeIds, setAvailableEmployeeIds] = useState<string[]>([]);
+    // It stores IDs.
+    
+    // We need the full employee objects to render.
+    // We can fetch all employees for the branch when entering this step or just fetch them in the useEffect.
+    
+    const [branchEmployees, setBranchEmployees] = useState<Employee[]>([]);
+    
+    useEffect(() => {
+        if (selectedBranch) {
+            dataService.getEmployeesByBranch(selectedBranch.id).then(setBranchEmployees);
+        }
+    }, [selectedBranch]);
+
+    const eligibleEmployees = branchEmployees.filter(e => e.serviceIds.includes(selectedService!.id));
+
     return (
         <div className="p-6 space-y-6 animate-fade-in pb-24">
             <div className="space-y-2">
@@ -367,20 +439,19 @@ const BookingWizard: React.FC<Props> = ({ onBack }) => {
             </div>
 
             <div className="space-y-3">
-                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider ml-1">Especialistas</h3>
+                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider ml-1">Especialistas {loadingAvailability && <span className="text-xs font-normal text-indigo-500 animate-pulse">(Verificando...)</span>}</h3>
                 {eligibleEmployees.map(emp => {
-                    // Check logic
-                    const isAvailable = dataService.isEmployeeAvailable(emp.id, selectedDate, selectedTime!, selectedService!.id);
+                    const isAvailable = availableEmployeeIds.includes(emp.id);
                     return (
                         <div
                             key={emp.id}
                             onClick={() => { if(isAvailable) { setSelectedEmployee(emp); setStep(5); } }}
                             className={`flex items-center gap-4 p-3 rounded-2xl border transition-all ${isAvailable ? 'bg-white border-gray-100 cursor-pointer hover:border-indigo-500 hover:shadow-sm' : 'bg-gray-50 border-transparent opacity-60 grayscale'}`}
                         >
-                            <img src={emp.avatar} className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm" alt={emp.name} />
+                            <img src={emp.avatarUrl || emp.avatar} className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm" alt={emp.name} />
                             <div className="flex-1">
                                 <h4 className="font-bold text-gray-900">{emp.name}</h4>
-                                <p className="text-xs text-gray-500">{emp.role}</p>
+                                <p className="text-xs text-gray-500">{emp.roleLabel || emp.role}</p>
                             </div>
                             {isAvailable ? (
                                 <div className="w-6 h-6 rounded-full border-2 border-gray-200 flex items-center justify-center group-hover:border-indigo-600">

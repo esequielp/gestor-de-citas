@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GestorCitas Pro</title>
-    <!-- Tailwind CDN for MVP speed, though postcss is better for prod -->
+    <!-- Tailwind CDN for MVP speed -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -34,31 +34,9 @@
       body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
       .leaflet-container { width: 100%; height: 100%; border-radius: 0.75rem; z-index: 0; }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "lucide-react": "https://esm.sh/lucide-react@^0.574.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-    "react/": "https://esm.sh/react@^19.2.4/",
-    "react": "https://esm.sh/react@^19.2.4",
-    "leaflet": "https://esm.sh/leaflet@^1.9.4",
-    "vite": "https://esm.sh/vite@^7.3.1",
-    "react-leaflet": "https://esm.sh/react-leaflet@^5.0.0",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.4",
-    "dotenv": "https://esm.sh/dotenv@^17.3.1",
-    "cors": "https://esm.sh/cors@^2.8.6",
-    "@prisma/client": "https://esm.sh/@prisma/client@^7.4.0",
-    "express": "https://esm.sh/express@^5.2.1",
-    "swagger-ui-express": "https://esm.sh/swagger-ui-express@^5.0.1",
-    "swagger-jsdoc": "https://esm.sh/swagger-jsdoc@^6.2.8",
-    "node-cron": "https://esm.sh/node-cron@^4.2.1"
-  }
-}
-</script>
-</head>
+  </head>
   <body>
     <div id="root"></div>
-    <!-- CRITICAL FIX: Entry point for Vite -->
     <script type="module" src="/main.tsx"></script>
   </body>
 </html>

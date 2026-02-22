@@ -1,4 +1,4 @@
-import prisma from '../prisma/client';
+import prisma from '../prisma/client.js';
 
 interface CreateAppointmentDTO {
   branchId: string;
@@ -69,6 +69,30 @@ export const appointmentService = {
         employee: true
       },
       orderBy: { createdAt: 'desc' }
+    });
+  },
+
+  async update(id: string, data: any) {
+    return await prisma.appointment.update({
+      where: { id },
+      data: {
+        status: data.status,
+        date: data.date,
+        time: data.time,
+        employeeId: data.employeeId,
+        serviceId: data.serviceId
+      },
+      include: {
+        client: true,
+        service: true,
+        employee: true
+      }
+    });
+  },
+
+  async delete(id: string) {
+    return await prisma.appointment.delete({
+      where: { id }
     });
   }
 };

@@ -1,5 +1,5 @@
-import prisma from '../prisma/client';
-import { settingsService } from './settings.service';
+import prisma from '../prisma/client.js';
+import { settingsService } from './settings.service.js';
 
 export const reminderService = {
   

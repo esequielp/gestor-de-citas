@@ -53,7 +53,7 @@ const options: swaggerJsdoc.Options = {
       },
     },
   },
-  apis: ['./src/routes/*.ts'], // Archivos donde buscar anotaciones JSDoc
+  apis: ['./backend/src/routes/*.ts'], // Archivos donde buscar anotaciones JSDoc
 };
 
-export const swaggerSpec = swaggerJsdoc(options);
+export default swaggerJsdoc(options);

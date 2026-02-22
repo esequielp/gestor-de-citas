@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { appointmentController } from '../controllers/appointment.controller';
+import { appointmentController } from '../controllers/appointment.controller.js';
 
 const router = Router();
 
@@ -30,7 +30,7 @@ const router = Router();
  *       200:
  *         description: Lista de citas filtrada
  */
-router.get('/', appointmentController.getAppointments);
+router.get('/appointments', appointmentController.getAppointments);
 
 /**
  * @swagger
@@ -87,6 +87,9 @@ router.get('/availability', appointmentController.checkAvailability);
  *       409:
  *         description: El horario seleccionado no está disponible
  */
-router.post('/', appointmentController.createAppointment);
+router.post('/appointments', appointmentController.createAppointment);
+
+router.put('/appointments/:id', appointmentController.updateAppointment);
+router.delete('/appointments/:id', appointmentController.deleteAppointment);
 
 export default router;

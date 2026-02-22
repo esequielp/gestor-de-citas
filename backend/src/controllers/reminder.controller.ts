@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { reminderService } from '../services/reminder.service';
+import { reminderService } from '../services/reminder.service.js';
 
 export const reminderController = {
   async process(req: Request, res: Response) {

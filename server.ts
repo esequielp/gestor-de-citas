@@ -1,0 +1,110 @@
+console.log('🚀 Starting server.ts...');
+
+import express from 'express';
+import { createServer as createViteServer } from 'vite';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+import swaggerUi from 'swagger-ui-express';
+import swaggerSpec from './backend/src/config/swagger.js';
+import apiRoutes from './backend/src/routes/index.js';
+import prisma from './backend/src/prisma/client.js';
+import { reminderService } from './backend/src/services/reminder.service.js';
+import cron from 'node-cron';
+
+console.log('📦 Imports completed');
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config();
+
+async function startServer() {
+  console.log('🛠️ Initializing Express app...');
+  const app = express();
+  const PORT = 3000;
+
+  app.use(cors());
+  app.use(express.json());
+
+  console.log('🛣️ Setting up API routes...');
+  // API Routes
+  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+  app.use('/api', apiRoutes);
+
+  app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', message: 'AgendaPro API running' });
+  });
+
+  let vite: any;
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('⚡ Initializing Vite in middleware mode...');
+    vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+    console.log('✅ Vite middleware attached');
+  } else {
+    app.use(express.static('dist'));
+  }
+
+  // Catch-all route for SPA
+  app.use('*', async (req, res, next) => {
+    const url = req.originalUrl;
+    
+    // Skip API routes
+    if (url.startsWith('/api')) {
+      return next();
+    }
+
+    try {
+      let template: string;
+      if (process.env.NODE_ENV !== 'production') {
+        const indexPath = path.resolve(__dirname, 'index.html');
+        if (!fs.existsSync(indexPath)) {
+            console.error('❌ index.html not found at:', indexPath);
+            return res.status(404).send('index.html not found');
+        }
+        template = fs.readFileSync(indexPath, 'utf-8');
+        template = await vite.transformIndexHtml(url, template);
+      } else {
+        template = fs.readFileSync(path.resolve(__dirname, 'dist/index.html'), 'utf-8');
+      }
+      res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
+    } catch (e) {
+      if (vite) vite.ssrFixStacktrace(e as Error);
+      console.error('❌ Error serving index.html:', e);
+      next(e);
+    }
+  });
+
+  console.log(`📡 Attempting to listen on port ${PORT}...`);
+  app.listen(PORT, '0.0.0.0', async () => {
+    console.log(`✅ Server running on http://0.0.0.0:${PORT}`);
+    
+    // Scheduler: Ejecutar cada 1 minuto
+    cron.schedule('* * * * *', async () => {
+      try {
+        await reminderService.processReminders();
+      } catch (error) {
+        console.error('Error en cron job:', error);
+      }
+    });
+    console.log(`⏰ Scheduler de recordatorios activo (1 min interval)`);
+
+    try {
+      console.log('🔌 Connecting to database...');
+      await prisma.$connect();
+      console.log('✅ Database connected successfully');
+    } catch (err) {
+      console.error('❌ Database connection failed:', err);
+    }
+  });
+}
+
+startServer().catch(err => {
+  console.error('❌ Failed to start server:', err);
+});

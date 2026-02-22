@@ -5,6 +5,7 @@ import AdminDashboard from './views/AdminDashboard';
 import LandingPage from './views/LandingPage';
 import B2BLandingPage from './views/B2BLandingPage';
 import { Button } from './components/Button';
+import ChatWidget from './src/components/chat/ChatWidget';
 
 const App: React.FC = () => {
   // Logic to check if we should go straight to booking based on URL param
@@ -96,6 +97,7 @@ const App: React.FC = () => {
   return (
     <>
       {renderView()}
+      <ChatWidget />
     </>
   );
 };

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { branchController } from '../controllers/branch.controller';
+import { branchController } from '../controllers/branch.controller.js';
 
 const router = Router();
 
@@ -27,34 +27,8 @@ const router = Router();
  *                 $ref: '#/components/schemas/Branch'
  */
 router.get('/', branchController.getAll);
-
-/**
- * @swagger
- * /branches:
- *   post:
- *     summary: Crear una nueva sucursal
- *     tags: [Sucursales]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               name:
- *                 type: string
- *               address:
- *                 type: string
- *               lat: 
- *                 type: number
- *               lng:
- *                 type: number
- *               image:
- *                 type: string
- *     responses:
- *       201:
- *         description: Sucursal creada
- */
 router.post('/', branchController.create);
+router.get('/:id/services', branchController.getServices);
+router.get('/:id/employees', branchController.getEmployees);
 
 export default router;

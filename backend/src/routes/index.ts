@@ -1,11 +1,11 @@
 import { Router } from 'express';
-import branchRoutes from './branch.routes';
-import serviceRoutes from './service.routes';
-import employeeRoutes from './employee.routes';
-import clientRoutes from './client.routes';
-import appointmentRoutes from './appointment.routes';
-import settingsRoutes from './settings.routes';
-import reminderRoutes from './reminder.routes';
+import branchRoutes from './branch.routes.js';
+import serviceRoutes from './service.routes.js';
+import employeeRoutes from './employee.routes.js';
+import clientRoutes from './client.routes.js';
+import appointmentRoutes from './appointment.routes.js';
+import settingsRoutes from './settings.routes.js';
+import reminderRoutes from './reminder.routes.js';
 
 const router = Router();
 

@@ -1,262 +1,157 @@
 import { Branch, Employee, Appointment, Service, Client } from '../types';
-import { MOCK_BRANCHES, MOCK_EMPLOYEES, INITIAL_APPOINTMENTS, HOURS_OF_OPERATION, MOCK_SERVICES, MOCK_CLIENTS } from '../constants';
+import apiClient from './apiClient';
 
 class DataService {
-  private branches: Branch[] = MOCK_BRANCHES;
-  private employees: Employee[] = MOCK_EMPLOYEES;
-  private appointments: Appointment[] = INITIAL_APPOINTMENTS;
-  private services: Service[] = MOCK_SERVICES;
-  private clients: Client[] = MOCK_CLIENTS;
-
-  constructor() {
-    this.loadFromStorage();
-  }
-
-  private loadFromStorage() {
-    try {
-      const storedAppts = localStorage.getItem('appointments');
-      if (storedAppts) this.appointments = JSON.parse(storedAppts);
-      
-      const storedEmployees = localStorage.getItem('employees');
-      if (storedEmployees) this.employees = JSON.parse(storedEmployees);
-
-      const storedServices = localStorage.getItem('services');
-      if (storedServices) this.services = JSON.parse(storedServices);
-
-      const storedBranches = localStorage.getItem('branches');
-      if (storedBranches) this.branches = JSON.parse(storedBranches);
-
-      const storedClients = localStorage.getItem('clients');
-      if (storedClients) this.clients = JSON.parse(storedClients);
-    } catch (e) {
-      console.warn("LocalStorage access failed", e);
-    }
-  }
-
-  private saveToStorage() {
-    try {
-      localStorage.setItem('appointments', JSON.stringify(this.appointments));
-      localStorage.setItem('employees', JSON.stringify(this.employees));
-      localStorage.setItem('services', JSON.stringify(this.services));
-      localStorage.setItem('branches', JSON.stringify(this.branches));
-      localStorage.setItem('clients', JSON.stringify(this.clients));
-    } catch (e) {
-      console.warn("LocalStorage access failed", e);
-    }
-  }
-
   // --- Clients ---
-  getClients(): Client[] {
-    return this.clients;
+  async getClients(): Promise<Client[]> {
+    const res = await apiClient.get('/clients');
+    return res.data;
   }
 
-  getClientById(id: string): Client | undefined {
-    return this.clients.find(c => c.id === id);
+  async getClientById(id: string): Promise<Client | undefined> {
+    const res = await apiClient.get(`/clients/${id}`);
+    return res.data;
   }
 
-  addClient(client: Omit<Client, 'id' | 'createdAt'>): Client {
-    const newClient = { 
-      ...client, 
-      id: Math.random().toString(36).substr(2, 9),
-      createdAt: new Date().toISOString()
-    };
-    this.clients.push(newClient);
-    this.saveToStorage();
-    return newClient;
+  async addClient(client: Omit<Client, 'id' | 'createdAt'>): Promise<Client> {
+    const res = await apiClient.post('/clients', client);
+    return res.data;
   }
 
-  updateClient(client: Client): void {
-    const idx = this.clients.findIndex(c => c.id === client.id);
-    if (idx !== -1) {
-      this.clients[idx] = client;
-      this.saveToStorage();
+  async updateClient(client: Client): Promise<void> {
+    await apiClient.put(`/clients/${client.id}`, client);
+  }
+
+  async deleteClient(id: string): Promise<boolean> {
+    try {
+      await apiClient.delete(`/clients/${id}`);
+      return true;
+    } catch (e) {
+      return false;
     }
   }
 
-  // Returns true if deleted, false if blocked by business rules (has appointments)
-  deleteClient(id: string): boolean {
-    const hasAppointments = this.appointments.some(a => a.clientId === id);
-    if (hasAppointments) {
-      return false; 
-    }
-    this.clients = this.clients.filter(c => c.id !== id);
-    this.saveToStorage();
-    return true;
+  async getAppointmentsByClient(clientId: string): Promise<Appointment[]> {
+    const res = await apiClient.get(`/appointments?clientId=${clientId}`);
+    return res.data;
   }
 
-  getAppointmentsByClient(clientId: string): Appointment[] {
-    return this.appointments.filter(a => a.clientId === clientId).sort((a,b) => b.date.localeCompare(a.date));
-  }
-
-  // Helper for Public Booking Wizard: Find existing by email OR create new
-  getOrCreateClient(name: string, email: string, phone: string): Client {
-    const existing = this.clients.find(c => c.email.toLowerCase() === email.toLowerCase());
-    if (existing) {
-      return existing;
-    }
+  async getOrCreateClient(name: string, email: string, phone: string): Promise<Client> {
+    // Search by email
+    const clients = await this.getClients();
+    const existing = clients.find(c => c.email.toLowerCase() === email.toLowerCase());
+    if (existing) return existing;
+    
     return this.addClient({ name, email, phone });
   }
 
   // --- Services ---
-  getServices(): Service[] {
-    return this.services;
+  async getServices(): Promise<Service[]> {
+    const res = await apiClient.get('/services');
+    return res.data;
   }
 
-  getServicesByBranch(branchId: string): Service[] {
-    const branch = this.branches.find(b => b.id === branchId);
-    if (!branch) return [];
-    return this.services.filter(s => branch.serviceIds.includes(s.id) && s.active);
+  async getServicesByBranch(branchId: string): Promise<Service[]> {
+    const res = await apiClient.get(`/branches/${branchId}/services`);
+    return res.data;
   }
 
-  addService(service: Omit<Service, 'id'>): Service {
-    const newService = { ...service, id: Math.random().toString(36).substr(2, 9) };
-    this.services.push(newService);
-    this.saveToStorage();
-    return newService;
+  async addService(service: Omit<Service, 'id'>): Promise<Service> {
+    const res = await apiClient.post('/services', service);
+    return res.data;
   }
 
-  updateService(service: Service): void {
-    const idx = this.services.findIndex(s => s.id === service.id);
-    if (idx !== -1) {
-      this.services[idx] = service;
-      this.saveToStorage();
-    }
+  async updateService(service: Service): Promise<void> {
+    await apiClient.put(`/services/${service.id}`, service);
   }
 
-  deleteService(id: string): void {
-    this.services = this.services.filter(s => s.id !== id);
-    this.saveToStorage();
+  async deleteService(id: string): Promise<void> {
+    await apiClient.delete(`/services/${id}`);
   }
 
   // --- Branches ---
-  getBranches(): Branch[] {
-    return this.branches;
+  async getBranches(): Promise<Branch[]> {
+    const res = await apiClient.get('/branches');
+    return res.data;
   }
 
-  addBranch(branch: Omit<Branch, 'id'>): Branch {
-    const newBranch = { ...branch, id: Math.random().toString(36).substr(2, 9) };
-    this.branches.push(newBranch);
-    this.saveToStorage();
-    return newBranch;
+  async addBranch(branch: Omit<Branch, 'id'>): Promise<Branch> {
+    const res = await apiClient.post('/branches', branch);
+    return res.data;
   }
 
-  updateBranch(branch: Branch): void {
-    const idx = this.branches.findIndex(b => b.id === branch.id);
-    if (idx !== -1) {
-      this.branches[idx] = branch;
-      this.saveToStorage();
-    }
+  async updateBranch(branch: Branch): Promise<void> {
+    await apiClient.put(`/branches/${branch.id}`, branch);
   }
 
-  deleteBranch(id: string): void {
-    this.branches = this.branches.filter(b => b.id !== id);
-    this.saveToStorage();
+  async deleteBranch(id: string): Promise<void> {
+    await apiClient.delete(`/branches/${id}`);
   }
 
   // --- Employees ---
-  getEmployeesByBranch(branchId: string): Employee[] {
-    return this.employees.filter(e => e.branchId === branchId);
+  async getEmployeesByBranch(branchId: string): Promise<Employee[]> {
+    const res = await apiClient.get(`/branches/${branchId}/employees`);
+    return res.data;
   }
 
-  getEmployeeById(id: string): Employee | undefined {
-    return this.employees.find(e => e.id === id);
+  async getEmployeeById(id: string): Promise<Employee | undefined> {
+    const res = await apiClient.get(`/employees/${id}`);
+    return res.data;
   }
 
-  addEmployee(employee: Omit<Employee, 'id'>): Employee {
-    const newEmployee = { ...employee, id: Math.random().toString(36).substr(2, 9) };
-    this.employees.push(newEmployee);
-    this.saveToStorage();
-    return newEmployee;
+  async addEmployee(employee: Omit<Employee, 'id'>): Promise<Employee> {
+    const res = await apiClient.post('/employees', employee);
+    return res.data;
   }
 
-  updateEmployee(updatedEmployee: Employee): void {
-    const index = this.employees.findIndex(e => e.id === updatedEmployee.id);
-    if (index !== -1) {
-      this.employees[index] = updatedEmployee;
-      this.saveToStorage();
-    }
+  async updateEmployee(employee: Employee): Promise<void> {
+    await apiClient.put(`/employees/${employee.id}`, employee);
   }
 
-  deleteEmployee(id: string): void {
-    this.employees = this.employees.filter(e => e.id !== id);
-    this.saveToStorage();
+  async deleteEmployee(id: string): Promise<void> {
+    await apiClient.delete(`/employees/${id}`);
   }
 
   // --- Appointments ---
-  getAppointments(): Appointment[] {
-    return this.appointments;
+  async getAppointments(): Promise<Appointment[]> {
+    const res = await apiClient.get('/appointments');
+    return res.data;
   }
 
-  addAppointment(appt: Omit<Appointment, 'id' | 'status' | 'createdAt'>): Appointment {
-    const newAppt: Appointment = {
-      ...appt,
-      id: Math.random().toString(36).substr(2, 9),
-      status: 'confirmed',
-      createdAt: new Date().toISOString(),
-    };
-    this.appointments.push(newAppt);
-    this.saveToStorage();
-    return newAppt;
+  async addAppointment(appt: Omit<Appointment, 'id' | 'status' | 'createdAt'>): Promise<Appointment> {
+    const res = await apiClient.post('/appointments', appt);
+    return res.data;
   }
 
-  updateAppointment(appointment: Appointment): void {
-    const index = this.appointments.findIndex(a => a.id === appointment.id);
-    if (index !== -1) {
-      this.appointments[index] = appointment;
-      this.saveToStorage();
-    }
+  async updateAppointment(appointment: Appointment): Promise<void> {
+    await apiClient.put(`/appointments/${appointment.id}`, appointment);
   }
 
-  deleteAppointment(id: string): void {
-    this.appointments = this.appointments.filter(a => a.id !== id);
-    this.saveToStorage();
+  async deleteAppointment(id: string): Promise<void> {
+    await apiClient.delete(`/appointments/${id}`);
   }
 
   // --- Core Logic ---
   
-  isEmployeeAvailable(employeeId: string, date: string, time: number, serviceId?: string, excludeAppointmentId?: string): boolean {
-    const employee = this.getEmployeeById(employeeId);
-    if (!employee) return false;
-
-    if (serviceId && !employee.serviceIds.includes(serviceId)) {
-      return false;
-    }
-
-    const [y, m, d] = date.split('-').map(Number);
-    const localDate = new Date(y, m - 1, d);
-    const safeDayIndex = localDate.getDay();
-
-    const dailySchedule = employee.weeklySchedule.find(s => s.dayOfWeek === safeDayIndex);
-
-    if (!dailySchedule || !dailySchedule.isWorkDay) return false;
-
-    const isWithinRange = dailySchedule.ranges.some(range => time >= range.start && time < range.end);
-    if (!isWithinRange) return false;
-
-    const conflict = this.appointments.find(
-      a => a.employeeId === employeeId && 
-           a.date === date && 
-           a.time === time && 
-           a.status === 'confirmed' &&
-           a.id !== excludeAppointmentId
-    );
-
-    return !conflict;
+  async isEmployeeAvailable(employeeId: string, date: string, time: number, serviceId?: string): Promise<boolean> {
+    const res = await apiClient.get('/availability', {
+      params: { employeeId, date, time }
+    });
+    return res.data.available;
   }
 
-  getNextAvailableSlot(employeeId: string, date: string, startSearchFromTime: number, serviceId?: string): number | null {
-    const possibleHours = HOURS_OF_OPERATION.filter(h => h > startSearchFromTime);
-    for (const h of possibleHours) {
-        if (this.isEmployeeAvailable(employeeId, date, h, serviceId)) {
-            return h;
-        }
+  async getAvailableEmployeesForSlot(branchId: string, date: string, time: number, serviceId?: string): Promise<Employee[]> {
+    // This is inefficient but works for MVP without changing backend too much
+    const employees = await this.getEmployeesByBranch(branchId);
+    const available: Employee[] = [];
+    
+    for (const emp of employees) {
+      if (serviceId && !emp.serviceIds.includes(serviceId)) continue;
+      
+      const isFree = await this.isEmployeeAvailable(emp.id, date, time);
+      if (isFree) available.push(emp);
     }
-    return null;
-  }
-
-  getAvailableEmployeesForSlot(branchId: string, date: string, time: number, serviceId?: string): Employee[] {
-    const branchEmployees = this.getEmployeesByBranch(branchId);
-    return branchEmployees.filter(emp => this.isEmployeeAvailable(emp.id, date, time, serviceId));
+    return available;
   }
 }
 

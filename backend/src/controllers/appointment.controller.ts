@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { appointmentService } from '../services/appointment.service';
+import { appointmentService } from '../services/appointment.service.js';
 
 export const appointmentController = {
   
@@ -59,6 +59,26 @@ export const appointmentController = {
       }
       console.error(error);
       res.status(500).json({ error: 'Error interno del servidor' });
+    }
+  },
+
+  async updateAppointment(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const updated = await appointmentService.update(id, req.body);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: 'Error al actualizar cita' });
+    }
+  },
+
+  async deleteAppointment(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      await appointmentService.delete(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: 'Error al eliminar cita' });
     }
   }
 };

@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { settingsService } from '../services/settings.service';
+import { settingsService } from '../services/settings.service.js';
 
 export const settingsController = {
   async get(req: Request, res: Response) {
