@@ -220,6 +220,16 @@ class DataService {
     return res.data;
   }
 
+  async uploadMedia(fileBase64: string, fileName: string, mimeType: string): Promise<{ url: string; path: string }> {
+    const res = await apiClient.post('/whatsapp/upload-media', { fileBase64, fileName, mimeType });
+    return res.data;
+  }
+
+  async sendMedia(data: { phone: string; clientId?: string; mediaUrl: string; mediaType: string; caption?: string; fileName?: string }): Promise<any> {
+    const res = await apiClient.post('/whatsapp/send-media', data);
+    return res.data;
+  }
+
   // --- AI Service Recommendation ---
   async recommendServiceAI(userMessage: string): Promise<{ service: Service | null; explanation: string }> {
     const res = await apiClient.post('/services/ai/recommend', { message: userMessage });

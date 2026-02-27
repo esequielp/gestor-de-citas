@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar as CalendarIcon, Users, MapPin, LogOut, Clock, X, Link as LinkIcon, Plus, Trash2, CheckCircle, Sparkles, Scissors, Edit2, DollarSign, Activity, ChevronLeft, ChevronRight, List, User, Phone, Mail, History, LayoutDashboard, TrendingUp, AlertCircle, CalendarClock, Settings, Bell, Zap, MessageCircle, MessageSquare, Send, Bot, Loader2, Globe, Search } from 'lucide-react';
+import { Calendar as CalendarIcon, Users, MapPin, LogOut, Clock, X, Link as LinkIcon, Plus, Trash2, CheckCircle, Sparkles, Scissors, Edit2, DollarSign, Activity, ChevronLeft, ChevronRight, List, User, Phone, Mail, History, LayoutDashboard, TrendingUp, AlertCircle, CalendarClock, Settings, Bell, Zap, MessageCircle, MessageSquare, Send, Bot, Loader2, Globe, Search, Paperclip, Image, FileText, Mic, Download } from 'lucide-react';
 import { dataService } from '../services/dataService';
 import apiClient from '../services/apiClient';
 import { Appointment, Branch, Employee, DaySchedule, TimeRange, Service, Client } from '../types';
@@ -615,7 +615,49 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                                                     ? 'bg-indigo-600 text-white rounded-tr-none'
                                                     : 'bg-white text-gray-800 rounded-tl-none border border-gray-100'
                                                     }`}>
-                                                    {msg.contenido || msg.texto || 'Mensaje sin contenido'}
+                                                    {/* Media content */}
+                                                    {msg.media_url && msg.media_type === 'image' && (
+                                                        <div className="mb-2 rounded-lg overflow-hidden">
+                                                            <img
+                                                                src={msg.media_url}
+                                                                alt="Imagen"
+                                                                className="max-w-full max-h-64 rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                                                                onClick={() => window.open(msg.media_url, '_blank')}
+                                                                loading="lazy"
+                                                            />
+                                                        </div>
+                                                    )}
+                                                    {msg.media_url && msg.media_type === 'audio' && (
+                                                        <div className="mb-2">
+                                                            <audio controls className="max-w-full" style={{ height: 36 }}>
+                                                                <source src={msg.media_url} type={msg.media_mime_type || 'audio/ogg'} />
+                                                                Tu navegador no soporta audio.
+                                                            </audio>
+                                                        </div>
+                                                    )}
+                                                    {msg.media_url && msg.media_type === 'video' && (
+                                                        <div className="mb-2 rounded-lg overflow-hidden">
+                                                            <video controls className="max-w-full max-h-64 rounded-lg">
+                                                                <source src={msg.media_url} type={msg.media_mime_type || 'video/mp4'} />
+                                                            </video>
+                                                        </div>
+                                                    )}
+                                                    {msg.media_url && msg.media_type === 'document' && (
+                                                        <a
+                                                            href={msg.media_url}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className={`flex items-center gap-2 mb-2 px-3 py-2 rounded-lg transition-colors ${isBot ? 'bg-indigo-500 hover:bg-indigo-400' : 'bg-gray-100 hover:bg-gray-200'}`}
+                                                        >
+                                                            <FileText size={18} />
+                                                            <span className="text-xs font-medium truncate">{msg.contenido || 'Documento'}</span>
+                                                            <Download size={14} className="ml-auto flex-shrink-0" />
+                                                        </a>
+                                                    )}
+                                                    {/* Text content (skip if it's just an emoji label for media-only messages) */}
+                                                    {(!msg.media_url || (msg.contenido && !['📷 Imagen', '🎵 Audio', '🎬 Video', '🏷️ Sticker'].includes(msg.contenido))) && (
+                                                        <span>{msg.contenido || msg.texto || 'Mensaje sin contenido'}</span>
+                                                    )}
                                                     <div className={`text-[10px] mt-1 flex justify-end items-center gap-1 ${isBot ? 'text-indigo-200' : 'text-gray-400'}`}>
                                                         {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                         {isBot && <CheckCircle size={10} />}
@@ -624,18 +666,90 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                                             </div>
                                         )
                                     })
+
                                 )}
                                 <div ref={messagesEndRef} className="h-4" />
                             </div>
 
                             <div className="px-6 py-4 bg-white border-t border-gray-200">
                                 <div className="flex items-center gap-3 bg-gray-50 p-2 rounded-xl border border-gray-100">
+                                    {/* Attachment button (WhatsApp only) */}
+                                    {selectedChat.via === 'WHATSAPP' && (
+                                        <>
+                                            <input
+                                                type="file"
+                                                id="media-upload"
+                                                accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx"
+                                                className="hidden"
+                                                onChange={async (e) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (!file) return;
+
+                                                    // Validate file size (max 16MB for WhatsApp)
+                                                    if (file.size > 16 * 1024 * 1024) {
+                                                        showToast('El archivo es demasiado grande (máx. 16MB)', 'error');
+                                                        return;
+                                                    }
+
+                                                    setIsSendingMessage(true);
+                                                    try {
+                                                        // Convert to base64
+                                                        const reader = new FileReader();
+                                                        const base64Promise = new Promise<string>((resolve) => {
+                                                            reader.onload = () => {
+                                                                const result = reader.result as string;
+                                                                resolve(result.split(',')[1]); // Remove data:...;base64, prefix
+                                                            };
+                                                            reader.readAsDataURL(file);
+                                                        });
+                                                        const base64 = await base64Promise;
+
+                                                        // Upload to storage
+                                                        const uploadResult = await dataService.uploadMedia(base64, file.name, file.type);
+
+                                                        // Determine media type
+                                                        let mediaType = 'document';
+                                                        if (file.type.startsWith('image/')) mediaType = 'image';
+                                                        else if (file.type.startsWith('audio/')) mediaType = 'audio';
+                                                        else if (file.type.startsWith('video/')) mediaType = 'image'; // WA treats small videos as images
+
+                                                        // Send via WhatsApp
+                                                        await dataService.sendMedia({
+                                                            phone: selectedChat.telefono || '',
+                                                            clientId: selectedChat.client_id,
+                                                            mediaUrl: uploadResult.url,
+                                                            mediaType,
+                                                            caption: file.name,
+                                                            fileName: file.name
+                                                        });
+
+                                                        showToast('Archivo enviado correctamente', 'success');
+                                                        await loadMessages(selectedChat.id);
+                                                    } catch (err) {
+                                                        console.error('Error uploading/sending media:', err);
+                                                        showToast('Error al enviar archivo', 'error');
+                                                    } finally {
+                                                        setIsSendingMessage(false);
+                                                        e.target.value = ''; // Reset file input
+                                                    }
+                                                }}
+                                            />
+                                            <button
+                                                onClick={() => document.getElementById('media-upload')?.click()}
+                                                disabled={isSendingMessage}
+                                                className="w-10 h-10 rounded-lg flex items-center justify-center text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                                                title="Adjuntar archivo"
+                                            >
+                                                <Paperclip size={18} />
+                                            </button>
+                                        </>
+                                    )}
                                     <input
                                         type="text"
                                         value={newMessage}
                                         onChange={(e) => setNewMessage(e.target.value)}
                                         onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                                        placeholder="Escribe un mensaje..."
+                                        placeholder={selectedChat.via === 'WEB_CONTACT' ? 'Escribe tu respuesta por email...' : 'Escribe un mensaje...'}
                                         className="flex-1 bg-transparent border-none outline-none px-3 py-1 text-sm"
                                         disabled={isSendingMessage}
                                     />
@@ -644,13 +758,16 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                                         disabled={!newMessage.trim() || isSendingMessage}
                                         className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all ${!newMessage.trim() || isSendingMessage
                                             ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                                            : 'bg-indigo-600 text-white shadow-md hover:bg-indigo-700'
+                                            : selectedChat.via === 'WEB_CONTACT'
+                                                ? 'bg-amber-500 text-white shadow-md hover:bg-amber-600'
+                                                : 'bg-indigo-600 text-white shadow-md hover:bg-indigo-700'
                                             }`}
                                     >
-                                        {isSendingMessage ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} className="ml-1" />}
+                                        {isSendingMessage ? <Loader2 size={18} className="animate-spin" /> : selectedChat.via === 'WEB_CONTACT' ? <Mail size={18} /> : <Send size={18} className="ml-1" />}
                                     </button>
                                 </div>
                             </div>
+
                         </>
                     ) : (
                         <div className="flex-1 flex flex-col items-center justify-center text-center p-12">

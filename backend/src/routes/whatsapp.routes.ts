@@ -63,8 +63,48 @@ router.post('/webhook', async (req, res) => {
     }
 
     from = message.from; // Sender phone
-    msgBody = message.text ? message.text.body : 'Media/Other message';
     waId = message.id;
+
+    // Detect message type and extract content + media info
+    let mediaId = '';
+    let mediaMimeType = '';
+    let mediaType = ''; // image, audio, video, document
+    let mediaCaption = '';
+
+    if (message.type === 'text') {
+        msgBody = message.text.body;
+    } else if (message.type === 'image' && message.image) {
+        mediaId = message.image.id;
+        mediaMimeType = message.image.mime_type || 'image/jpeg';
+        mediaType = 'image';
+        mediaCaption = message.image.caption || '';
+        msgBody = mediaCaption || '📷 Imagen';
+    } else if (message.type === 'audio' && message.audio) {
+        mediaId = message.audio.id;
+        mediaMimeType = message.audio.mime_type || 'audio/ogg';
+        mediaType = 'audio';
+        msgBody = '🎵 Audio';
+    } else if (message.type === 'video' && message.video) {
+        mediaId = message.video.id;
+        mediaMimeType = message.video.mime_type || 'video/mp4';
+        mediaType = 'video';
+        mediaCaption = message.video.caption || '';
+        msgBody = mediaCaption || '🎬 Video';
+    } else if (message.type === 'document' && message.document) {
+        mediaId = message.document.id;
+        mediaMimeType = message.document.mime_type || 'application/octet-stream';
+        mediaType = 'document';
+        mediaCaption = message.document.caption || '';
+        msgBody = mediaCaption || `📄 ${message.document.filename || 'Documento'}`;
+    } else if (message.type === 'sticker' && message.sticker) {
+        mediaId = message.sticker.id;
+        mediaMimeType = message.sticker.mime_type || 'image/webp';
+        mediaType = 'image';
+        msgBody = '🏷️ Sticker';
+    } else {
+        // Location, contacts, interactive, etc.
+        msgBody = message.text?.body || `[${message.type || 'unknown'}]`;
+    }
 
     // Resolve recipient phone ID (to route to correct tenant)
     let recipientId = '';
@@ -82,7 +122,7 @@ router.post('/webhook', async (req, res) => {
         senderName = body.entry[0].changes[0].value.contacts[0].profile.name;
     }
 
-    console.log(`📩 Nuevo mensaje de ${senderName} (${from}) para ${recipientId}: ${msgBody}`);
+    console.log(`📩 Nuevo mensaje de ${senderName} (${from}) para ${recipientId}: ${msgBody}${mediaType ? ` [${mediaType}]` : ''}`);
 
     // 1. Try to find the client to get the tenant
     let { data: client } = await supabaseAdmin
@@ -122,6 +162,16 @@ router.post('/webhook', async (req, res) => {
     }
 
     if (empresaId) {
+        // Download media if present
+        let mediaUrl: string | null = null;
+        if (mediaId && empresaId) {
+            const downloadResult = await whatsappService.downloadMedia(mediaId, empresaId, mediaMimeType);
+            mediaUrl = downloadResult.url;
+            if (downloadResult.error) {
+                console.error(`⚠️ Media download failed: ${downloadResult.error}`);
+            }
+        }
+
         // 2. Save incoming message
         await supabaseAdmin.from('mensajes').insert([{
             empresa_id: empresaId,
@@ -132,8 +182,12 @@ router.post('/webhook', async (req, res) => {
             tipo: 'ENTRANTE',
             wa_id: waId,
             estado: 'RECIBIDO',
-            via: 'WHATSAPP'
+            via: 'WHATSAPP',
+            media_url: mediaUrl,
+            media_type: mediaType || null,
+            media_mime_type: mediaMimeType || null
         }]);
+
 
         // 3. Trigger AI Auto-reply (Async block so we don't block the webhook response)
         (async () => {
@@ -498,9 +552,79 @@ router.post('/reply-contact', requireTenant, async (req, res) => {
 
         if (error) throw error;
 
+
         res.json({ success: true, emailId: emailResult.id, message: data });
     } catch (error: any) {
         console.error('Error replying to contact:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Upload media from admin (base64 encoded) to Supabase Storage
+router.post('/upload-media', requireTenant, async (req, res) => {
+    const { fileBase64, fileName, mimeType } = req.body;
+    const tenantId = getTenantId(req);
+
+    if (!fileBase64 || !fileName) {
+        return res.status(400).json({ error: 'fileBase64 and fileName are required' });
+    }
+
+    try {
+        const buffer = Buffer.from(fileBase64, 'base64');
+        const storagePath = `${tenantId}/${Date.now()}_${fileName}`;
+
+        const { data, error } = await supabaseAdmin.storage
+            .from('chat_media')
+            .upload(storagePath, buffer, {
+                contentType: mimeType || 'application/octet-stream',
+                upsert: false
+            });
+
+        if (error) throw error;
+
+        const { data: urlData } = supabaseAdmin.storage
+            .from('chat_media')
+            .getPublicUrl(storagePath);
+
+        res.json({ success: true, url: urlData?.publicUrl, path: storagePath });
+    } catch (error: any) {
+        console.error('Error uploading media:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Send media (image/audio/document) to WhatsApp from admin
+router.post('/send-media', requireTenant, async (req, res) => {
+    const { phone, clientId, mediaUrl, mediaType, caption, fileName } = req.body;
+    const tenantId = getTenantId(req);
+
+    if (!phone || !mediaUrl || !mediaType) {
+        return res.status(400).json({ error: 'phone, mediaUrl, and mediaType are required' });
+    }
+
+    try {
+        let result;
+        switch (mediaType) {
+            case 'image':
+                result = await whatsappService.sendImage(phone, mediaUrl, caption || '', tenantId, clientId);
+                break;
+            case 'audio':
+                result = await whatsappService.sendAudio(phone, mediaUrl, tenantId, clientId);
+                break;
+            case 'document':
+                result = await whatsappService.sendDocument(phone, mediaUrl, fileName || 'file', caption || '', tenantId, clientId);
+                break;
+            default:
+                return res.status(400).json({ error: `Unsupported media type: ${mediaType}` });
+        }
+
+        if (result.success) {
+            res.json({ success: true, waId: result.waId });
+        } else {
+            res.status(500).json({ error: result.error });
+        }
+    } catch (error: any) {
+        console.error('Error sending media:', error);
         res.status(500).json({ error: error.message });
     }
 });

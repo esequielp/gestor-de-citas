@@ -220,5 +220,262 @@ export const whatsappService = {
         );
 
         return { success: result.success, method: 'template', error: result.error as string };
+    },
+
+    /**
+     * Downloads media from Meta's API using the media_id,
+     * then uploads it to Supabase Storage (chat_media bucket).
+     * Returns the public URL of the uploaded file.
+     */
+    async downloadMedia(mediaId: string, empresaId: string, mimeType?: string): Promise<{ url: string | null; error?: string }> {
+        try {
+            const { accessToken } = await getCredentials(empresaId);
+            if (!accessToken) return { url: null, error: 'No WhatsApp credentials' };
+
+            // Step 1: Get the media URL from Meta
+            console.log(`📥 Fetching media info for ID: ${mediaId}`);
+            const metaResponse = await fetch(`https://graph.facebook.com/${VERSION}/${mediaId}`, {
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            });
+            const metaData: any = await metaResponse.json();
+
+            if (!metaData.url) {
+                console.error('❌ No media URL from Meta:', metaData);
+                return { url: null, error: 'Could not get media URL from Meta' };
+            }
+
+            // Step 2: Download the actual binary from Meta's CDN
+            console.log(`📥 Downloading media from: ${metaData.url.slice(0, 80)}...`);
+            const mediaResponse = await fetch(metaData.url, {
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            });
+
+            if (!mediaResponse.ok) {
+                return { url: null, error: `Failed to download media: HTTP ${mediaResponse.status}` };
+            }
+
+            const mediaBuffer = Buffer.from(await mediaResponse.arrayBuffer());
+            const actualMime = mimeType || metaData.mime_type || 'application/octet-stream';
+
+            // Step 3: Determine file extension from mime type
+            const extMap: Record<string, string> = {
+                'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
+                'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/amr': 'amr', 'audio/aac': 'aac',
+                'audio/ogg; codecs=opus': 'ogg',
+                'video/mp4': 'mp4', 'video/3gpp': '3gp',
+                'application/pdf': 'pdf',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+            };
+            const ext = extMap[actualMime] || 'bin';
+            const fileName = `${empresaId}/${Date.now()}_${mediaId.slice(-8)}.${ext}`;
+
+            // Step 4: Upload to Supabase Storage
+            console.log(`📤 Uploading media to Supabase Storage: chat_media/${fileName}`);
+            const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
+                .from('chat_media')
+                .upload(fileName, mediaBuffer, {
+                    contentType: actualMime,
+                    upsert: false
+                });
+
+            if (uploadError) {
+                console.error('❌ Supabase Storage upload error:', uploadError);
+                return { url: null, error: uploadError.message };
+            }
+
+            // Step 5: Get public URL
+            const { data: urlData } = supabaseAdmin.storage
+                .from('chat_media')
+                .getPublicUrl(fileName);
+
+            const publicUrl = urlData?.publicUrl;
+            console.log(`✅ Media uploaded: ${publicUrl}`);
+            return { url: publicUrl || null };
+
+        } catch (error: any) {
+            console.error('❌ downloadMedia error:', error);
+            return { url: null, error: error.message };
+        }
+    },
+
+    /**
+     * Send an image via WhatsApp (direct message, requires open window)
+     */
+    async sendImage(to: string, imageUrl: string, caption: string, empresaId: string, clienteId?: string) {
+        const { phoneNumberId, accessToken } = await getCredentials(empresaId);
+        if (!phoneNumberId || !accessToken) return { success: false, error: 'Credentials missing' };
+
+        const cleanTo = to.replace(/\D/g, '');
+
+        try {
+            console.log(`📤 Sending image WA to ${cleanTo}: ${imageUrl.slice(0, 60)}...`);
+
+            const response = await fetch(`https://graph.facebook.com/${VERSION}/${phoneNumberId}/messages`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    messaging_product: 'whatsapp',
+                    recipient_type: 'individual',
+                    to: cleanTo,
+                    type: 'image',
+                    image: {
+                        link: imageUrl,
+                        caption: caption || ''
+                    }
+                }),
+            });
+
+            const data: any = await response.json();
+
+            if (data.messages && data.messages.length > 0) {
+                const waId = data.messages[0].id;
+                console.log(`✅ Image sent via WA. WA_ID: ${waId}`);
+
+                await supabaseAdmin.from('mensajes').insert([{
+                    empresa_id: empresaId,
+                    cliente_id: clienteId,
+                    telefono_remitente: phoneNumberId,
+                    telefono_destinatario: cleanTo,
+                    contenido: caption || '📷 Imagen',
+                    tipo: 'SALIENTE',
+                    wa_id: waId,
+                    estado: 'ENVIADO',
+                    via: 'WHATSAPP',
+                    media_url: imageUrl,
+                    media_type: 'image',
+                    media_mime_type: 'image/jpeg'
+                }]);
+
+                return { success: true, waId };
+            }
+
+            console.error('❌ WA Image send error:', JSON.stringify(data, null, 2));
+            return { success: false, error: data.error?.message || 'Error sending image' };
+        } catch (error: any) {
+            console.error('❌ sendImage error:', error);
+            return { success: false, error: error.message };
+        }
+    },
+
+    /**
+     * Send an audio via WhatsApp (direct message, requires open window)
+     */
+    async sendAudio(to: string, audioUrl: string, empresaId: string, clienteId?: string) {
+        const { phoneNumberId, accessToken } = await getCredentials(empresaId);
+        if (!phoneNumberId || !accessToken) return { success: false, error: 'Credentials missing' };
+
+        const cleanTo = to.replace(/\D/g, '');
+
+        try {
+            console.log(`📤 Sending audio WA to ${cleanTo}: ${audioUrl.slice(0, 60)}...`);
+
+            const response = await fetch(`https://graph.facebook.com/${VERSION}/${phoneNumberId}/messages`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    messaging_product: 'whatsapp',
+                    recipient_type: 'individual',
+                    to: cleanTo,
+                    type: 'audio',
+                    audio: { link: audioUrl }
+                }),
+            });
+
+            const data: any = await response.json();
+
+            if (data.messages && data.messages.length > 0) {
+                const waId = data.messages[0].id;
+                console.log(`✅ Audio sent via WA. WA_ID: ${waId}`);
+
+                await supabaseAdmin.from('mensajes').insert([{
+                    empresa_id: empresaId,
+                    cliente_id: clienteId,
+                    telefono_remitente: phoneNumberId,
+                    telefono_destinatario: cleanTo,
+                    contenido: '🎵 Audio',
+                    tipo: 'SALIENTE',
+                    wa_id: waId,
+                    estado: 'ENVIADO',
+                    via: 'WHATSAPP',
+                    media_url: audioUrl,
+                    media_type: 'audio',
+                    media_mime_type: 'audio/ogg'
+                }]);
+
+                return { success: true, waId };
+            }
+
+            console.error('❌ WA Audio send error:', JSON.stringify(data, null, 2));
+            return { success: false, error: data.error?.message || 'Error sending audio' };
+        } catch (error: any) {
+            console.error('❌ sendAudio error:', error);
+            return { success: false, error: error.message };
+        }
+    },
+
+    /**
+     * Send a document via WhatsApp
+     */
+    async sendDocument(to: string, documentUrl: string, filename: string, caption: string, empresaId: string, clienteId?: string) {
+        const { phoneNumberId, accessToken } = await getCredentials(empresaId);
+        if (!phoneNumberId || !accessToken) return { success: false, error: 'Credentials missing' };
+
+        const cleanTo = to.replace(/\D/g, '');
+
+        try {
+            const response = await fetch(`https://graph.facebook.com/${VERSION}/${phoneNumberId}/messages`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    messaging_product: 'whatsapp',
+                    recipient_type: 'individual',
+                    to: cleanTo,
+                    type: 'document',
+                    document: {
+                        link: documentUrl,
+                        caption: caption || '',
+                        filename: filename || 'document'
+                    }
+                }),
+            });
+
+            const data: any = await response.json();
+
+            if (data.messages && data.messages.length > 0) {
+                const waId = data.messages[0].id;
+
+                await supabaseAdmin.from('mensajes').insert([{
+                    empresa_id: empresaId,
+                    cliente_id: clienteId,
+                    telefono_remitente: phoneNumberId,
+                    telefono_destinatario: cleanTo,
+                    contenido: caption || `📄 ${filename}`,
+                    tipo: 'SALIENTE',
+                    wa_id: waId,
+                    estado: 'ENVIADO',
+                    via: 'WHATSAPP',
+                    media_url: documentUrl,
+                    media_type: 'document',
+                    media_mime_type: 'application/octet-stream'
+                }]);
+
+                return { success: true, waId };
+            }
+
+            return { success: false, error: data.error?.message || 'Error sending document' };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
     }
 };
+
