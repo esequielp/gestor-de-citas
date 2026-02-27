@@ -1,16 +1,17 @@
+import 'dotenv/config';
 console.log('🚀 Starting server.ts...');
 
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import cors from 'cors';
-import dotenv from 'dotenv';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import swaggerUi from 'swagger-ui-express';
 import swaggerSpec from './backend/src/config/swagger.js';
 import apiRoutes from './backend/src/routes/index.js';
-import prisma from './backend/src/prisma/client.js';
 import { reminderService } from './backend/src/services/reminder.service.js';
 import cron from 'node-cron';
 
@@ -19,15 +20,38 @@ console.log('📦 Imports completed');
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-dotenv.config();
 
 async function startServer() {
   console.log('🛠️ Initializing Express app...');
   const app = express();
   const PORT = 3000;
 
-  app.use(cors());
-  app.use(express.json());
+  // Trust proxy (ngrok, reverse proxies)
+  app.set('trust proxy', 1);
+
+  // Security headers
+  app.use(helmet({ contentSecurityPolicy: false })); // CSP disabled for SPA
+
+  // CORS — restrict to same origin in production
+  app.use(cors({
+    origin: process.env.NODE_ENV === 'production'
+      ? process.env.ALLOWED_ORIGIN || true
+      : true,
+    credentials: true,
+  }));
+
+  // Rate limiting — prevent brute force / abuse
+  const apiLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 120, // 120 requests per minute per IP
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Demasiadas solicitudes, intenta de nuevo en un momento.' },
+  });
+  app.use('/api', apiLimiter);
+
+  // Body size limit to prevent DoS
+  app.use(express.json({ limit: '1mb' }));
 
   console.log('🛣️ Setting up API routes...');
   // API Routes
@@ -52,9 +76,9 @@ async function startServer() {
   }
 
   // Catch-all route for SPA
-  app.use('*', async (req, res, next) => {
+  app.use(async (req, res, next) => {
     const url = req.originalUrl;
-    
+
     // Skip API routes
     if (url.startsWith('/api')) {
       return next();
@@ -65,8 +89,8 @@ async function startServer() {
       if (process.env.NODE_ENV !== 'production') {
         const indexPath = path.resolve(__dirname, 'index.html');
         if (!fs.existsSync(indexPath)) {
-            console.error('❌ index.html not found at:', indexPath);
-            return res.status(404).send('index.html not found');
+          console.error('❌ index.html not found at:', indexPath);
+          return res.status(404).send('index.html not found');
         }
         template = fs.readFileSync(indexPath, 'utf-8');
         template = await vite.transformIndexHtml(url, template);
@@ -84,7 +108,7 @@ async function startServer() {
   console.log(`📡 Attempting to listen on port ${PORT}...`);
   app.listen(PORT, '0.0.0.0', async () => {
     console.log(`✅ Server running on http://0.0.0.0:${PORT}`);
-    
+
     // Scheduler: Ejecutar cada 1 minuto
     cron.schedule('* * * * *', async () => {
       try {
@@ -96,11 +120,9 @@ async function startServer() {
     console.log(`⏰ Scheduler de recordatorios activo (1 min interval)`);
 
     try {
-      console.log('🔌 Connecting to database...');
-      await prisma.$connect();
-      console.log('✅ Database connected successfully');
+      console.log('🔌 Supabase Client initialized via service role in config/supabase.ts');
     } catch (err) {
-      console.error('❌ Database connection failed:', err);
+      console.error('❌ Supabase Client initialization passed', err);
     }
   });
 }

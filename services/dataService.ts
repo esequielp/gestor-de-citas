@@ -2,6 +2,17 @@ import { Branch, Employee, Appointment, Service, Client } from '../types';
 import apiClient from './apiClient';
 
 class DataService {
+  // --- Company / Tenant ---
+  async getCompanyInfo(): Promise<any> {
+    const res = await apiClient.get('/empresas/me');
+    return res.data;
+  }
+
+  async registerCompany(data: { nombre: string, email: string, telefono: string }): Promise<any> {
+    const res = await apiClient.post('/empresas', data);
+    return res.data;
+  }
+
   // --- Clients ---
   async getClients(): Promise<Client[]> {
     const res = await apiClient.get('/clients');
@@ -41,7 +52,7 @@ class DataService {
     const clients = await this.getClients();
     const existing = clients.find(c => c.email.toLowerCase() === email.toLowerCase());
     if (existing) return existing;
-    
+
     return this.addClient({ name, email, phone });
   }
 
@@ -89,6 +100,11 @@ class DataService {
   }
 
   // --- Employees ---
+  async getEmployees(): Promise<Employee[]> {
+    const res = await apiClient.get('/employees');
+    return res.data;
+  }
+
   async getEmployeesByBranch(branchId: string): Promise<Employee[]> {
     const res = await apiClient.get(`/branches/${branchId}/employees`);
     return res.data;
@@ -131,27 +147,130 @@ class DataService {
     await apiClient.delete(`/appointments/${id}`);
   }
 
-  // --- Core Logic ---
-  
-  async isEmployeeAvailable(employeeId: string, date: string, time: number, serviceId?: string): Promise<boolean> {
-    const res = await apiClient.get('/availability', {
-      params: { employeeId, date, time }
-    });
-    return res.data.available;
+  // --- Sessions ---
+  async getAppointmentSessions(appointmentId: string): Promise<any[]> {
+    const res = await apiClient.get(`/appointments/${appointmentId}/sessions`);
+    return res.data;
   }
 
-  async getAvailableEmployeesForSlot(branchId: string, date: string, time: number, serviceId?: string): Promise<Employee[]> {
-    // This is inefficient but works for MVP without changing backend too much
-    const employees = await this.getEmployeesByBranch(branchId);
-    const available: Employee[] = [];
-    
-    for (const emp of employees) {
-      if (serviceId && !emp.serviceIds.includes(serviceId)) continue;
-      
-      const isFree = await this.isEmployeeAvailable(emp.id, date, time);
-      if (isFree) available.push(emp);
-    }
-    return available;
+  async updateSessionStatus(sessionId: string, status: string, notes?: string): Promise<void> {
+    await apiClient.put(`/sessions/${sessionId}`, { estado: status, notas: notes });
+  }
+
+  // --- Employee Exceptions ---
+  async getEmployeeExceptions(employeeId: string, from?: string, to?: string): Promise<any[]> {
+    const params: any = {};
+    if (from) params.from = from;
+    if (to) params.to = to;
+    const res = await apiClient.get(`/exceptions/${employeeId}`, { params });
+    return res.data;
+  }
+
+  async saveException(data: { empleado_id: string, fecha: string, tipo: string, ranges?: any[], motivo?: string }): Promise<any> {
+    const res = await apiClient.post('/exceptions', data);
+    return res.data;
+  }
+
+  async deleteException(id: string): Promise<void> {
+    await apiClient.delete(`/exceptions/${id}`);
+  }
+
+  // --- Core Logic (Horarios y Citas) ---
+
+  async getAvailableSlots(branchId: string, serviceId: string, date: string): Promise<{ timeString: string, timeString12h: string, minutesFromMidnight: number, availableEmployeeIds: string[] }[]> {
+    const res = await apiClient.get('/slots', {
+      params: { branchId, serviceId, date }
+    });
+    return res.data;
+  }
+
+  // --- AI Features ---
+  async improveServiceDescription(serviceName: string, description: string): Promise<string> {
+    const res = await apiClient.post('/services/ai/improve-description', { serviceName, description });
+    return res.data.description;
+  }
+
+  // --- WhatsApp & Chat ---
+  async getMessages(clientId: string): Promise<any[]> {
+    const res = await apiClient.get(`/whatsapp/messages/${clientId}`);
+    return res.data;
+  }
+
+  async getChats(): Promise<any[]> {
+    const res = await apiClient.get('/whatsapp/chats');
+    return res.data;
+  }
+
+  async markAsRead(identifier: string): Promise<void> {
+    await apiClient.post(`/whatsapp/read/${identifier}`);
+  }
+
+  async sendWhatsAppMessage(clientId: string, phone: string, text: string, empresaId: string, via: 'WHATSAPP' | 'WEB_CHAT' | 'WEB_CONTACT' = 'WHATSAPP'): Promise<any> {
+    const res = await apiClient.post('/whatsapp/send', { clientId, phone, text, empresaId, via });
+    return res.data;
+  }
+
+  async saveMessage(data: { empresaId: string, clientId?: string, nombre?: string, email?: string, phone?: string, text: string, via: 'WEB_CHAT' | 'WEB_CONTACT', tipo?: 'ENTRANTE' | 'SALIENTE' }): Promise<any> {
+    const res = await apiClient.post('/whatsapp/save-direct', data);
+    return res.data;
+  }
+
+  async replyContact(data: { email: string; clientName: string; originalMessage: string; replyMessage: string }): Promise<any> {
+    const res = await apiClient.post('/whatsapp/reply-contact', data);
+    return res.data;
+  }
+
+  // --- AI Service Recommendation ---
+  async recommendServiceAI(userMessage: string): Promise<{ service: Service | null; explanation: string }> {
+    const res = await apiClient.post('/services/ai/recommend', { message: userMessage });
+    return res.data;
+  }
+
+  async chatAI(userMessage: string): Promise<{ reply: string }> {
+    const res = await apiClient.post('/services/ai/chat', { message: userMessage });
+    return res.data;
+  }
+
+  // --- Chatbot Configuration per Tenant ---
+  async getChatbotConfig(): Promise<{
+    businessType: string;
+    businessName: string;
+    greeting: string;
+    personality: string;
+    customInstructions: string;
+    enabled: boolean;
+  }> {
+    const res = await apiClient.get('/settings/chatbot');
+    return res.data;
+  }
+
+  async updateChatbotConfig(config: {
+    businessType?: string;
+    businessName?: string;
+    greeting?: string;
+    personality?: string;
+    customInstructions?: string;
+    enabled?: boolean;
+  }): Promise<any> {
+    const res = await apiClient.put('/settings/chatbot', config);
+    return res.data;
+  }
+
+  // --- Business Profile ---
+  async getBusinessProfile(): Promise<any> {
+    const res = await apiClient.get('/settings/profile');
+    return res.data;
+  }
+
+  async updateBusinessProfile(profile: any): Promise<any> {
+    const res = await apiClient.put('/settings/profile', profile);
+    return res.data;
+  }
+
+  // --- Notification count (unread incoming messages) ---
+  async getUnreadMessageCount(): Promise<number> {
+    const res = await apiClient.get('/whatsapp/unread-count');
+    return res.data.count || 0;
   }
 }
 

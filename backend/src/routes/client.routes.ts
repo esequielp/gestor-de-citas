@@ -1,93 +1,107 @@
 import { Router } from 'express';
-import prisma from '../prisma/client.js';
+import { supabaseAdmin } from '../config/supabase.js';
+import { requireTenant, getTenantId } from '../middleware/tenant.js';
 
 const router = Router();
+router.use(requireTenant);
 
-/**
- * @swagger
- * tags:
- *   name: Clientes
- *   description: Gestión de clientes
- */
-
-/**
- * @swagger
- * /clients:
- *   get:
- *     summary: Obtener todos los clientes
- *     tags: [Clientes]
- *     responses:
- *       200:
- *         description: Lista de clientes
- */
 router.get('/', async (req, res) => {
-  const clients = await prisma.client.findMany();
-  res.json(clients.map(c => ({
-      ...c,
-      name: c.fullName
+  const tenantId = getTenantId(req);
+  const { data: clients, error } = await supabaseAdmin
+    .from('clientes')
+    .select('*')
+    .eq('empresa_id', tenantId)
+    .order('created_at', { ascending: false });
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json((clients || []).map(c => ({
+    ...c,
+    name: c.nombre
   })));
 });
 
-/**
- * @swagger
- * /clients:
- *   post:
- *     summary: Crear o actualizar cliente (Upsert por email)
- *     tags: [Clientes]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [name, email]
- *             properties:
- *               name:
- *                 type: string
- *               email:
- *                 type: string
- *               phone:
- *                 type: string
- *     responses:
- *       200:
- *         description: Cliente creado o actualizado
- */
 router.post('/', async (req, res) => {
+  const tenantId = getTenantId(req);
   const { name, email, phone } = req.body;
+
   try {
-    const client = await prisma.client.upsert({
-      where: { email },
-      update: { fullName: name, phone },
-      create: { fullName: name, email, phone }
-    });
+    // Check if exists
+    const { data: existing } = await supabaseAdmin
+      .from('clientes')
+      .select('*')
+      .eq('empresa_id', tenantId)
+      .eq('email', email)
+      .single();
+
+    let client;
+    if (existing) {
+      const { data, error } = await supabaseAdmin
+        .from('clientes')
+        .update({ nombre: name, telefono: phone })
+        .eq('id', existing.id)
+        .select()
+        .single();
+      if (error) throw error;
+      client = data;
+    } else {
+      const { data, error } = await supabaseAdmin
+        .from('clientes')
+        .insert([{ empresa_id: tenantId, nombre: name, email, telefono: phone }])
+        .select()
+        .single();
+      if (error) throw error;
+      client = data;
+    }
+
     res.json({
-        ...client,
-        name: client.fullName
+      ...client,
+      name: client.nombre
     });
-  } catch (e) {
+  } catch (e: any) {
     console.error(e);
-    res.status(500).json({ error: "Error gestionando cliente" });
+    res.status(500).json({ error: e.message || "Error gestionando cliente" });
   }
 });
 
 router.get('/:id', async (req, res) => {
-    const client = await prisma.client.findUnique({ where: { id: req.params.id } });
-    if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
-    res.json({ ...client, name: client.fullName });
+  const tenantId = getTenantId(req);
+  const { data: client, error } = await supabaseAdmin
+    .from('clientes')
+    .select('*')
+    .eq('id', req.params.id)
+    .eq('empresa_id', tenantId)
+    .single();
+
+  if (error || !client) return res.status(404).json({ error: 'Cliente no encontrado' });
+  res.json({ ...client, name: client.nombre });
 });
 
 router.put('/:id', async (req, res) => {
-    const { name, email, phone } = req.body;
-    const client = await prisma.client.update({
-        where: { id: req.params.id },
-        data: { fullName: name, email, phone }
-    });
-    res.json({ ...client, name: client.fullName });
+  const tenantId = getTenantId(req);
+  const { name, email, phone } = req.body;
+
+  const { data: client, error } = await supabaseAdmin
+    .from('clientes')
+    .update({ nombre: name, email, telefono: phone })
+    .eq('id', req.params.id)
+    .eq('empresa_id', tenantId)
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ...client, name: client.nombre });
 });
 
 router.delete('/:id', async (req, res) => {
-    await prisma.client.delete({ where: { id: req.params.id } });
-    res.status(204).send();
+  const tenantId = getTenantId(req);
+  const { error } = await supabaseAdmin
+    .from('clientes')
+    .delete()
+    .eq('id', req.params.id)
+    .eq('empresa_id', tenantId);
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(204).send();
 });
 
 export default router;

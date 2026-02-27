@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { appointmentController } from '../controllers/appointment.controller.js';
+import { requireTenant } from '../middleware/tenant.js';
 
 const router = Router();
 
@@ -30,17 +31,22 @@ const router = Router();
  *       200:
  *         description: Lista de citas filtrada
  */
-router.get('/appointments', appointmentController.getAppointments);
+router.get('/appointments', requireTenant, appointmentController.getAppointments);
 
 /**
  * @swagger
- * /availability:
+ * /slots:
  *   get:
- *     summary: Verificar disponibilidad de un empleado
+ *     summary: Obtener slots de tiempos disponibles (cada 30 min) para un servicio
  *     tags: [Citas]
  *     parameters:
  *       - in: query
- *         name: employeeId
+ *         name: branchId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: serviceId
  *         required: true
  *         schema:
  *           type: string
@@ -50,23 +56,17 @@ router.get('/appointments', appointmentController.getAppointments);
  *         schema:
  *           type: string
  *           format: date
- *       - in: query
- *         name: time
- *         required: true
- *         schema:
- *           type: integer
  *     responses:
  *       200:
- *         description: Retorna true si está disponible
+ *         description: Retorna un arreglo con los slots disponibles
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 available:
- *                   type: boolean
+ *               type: array
+ *               items:
+ *                 type: object
  */
-router.get('/availability', appointmentController.checkAvailability);
+router.get('/slots', requireTenant, appointmentController.getSlots);
 
 /**
  * @swagger
@@ -87,9 +87,13 @@ router.get('/availability', appointmentController.checkAvailability);
  *       409:
  *         description: El horario seleccionado no está disponible
  */
-router.post('/appointments', appointmentController.createAppointment);
+router.post('/appointments', requireTenant, appointmentController.createAppointment);
 
-router.put('/appointments/:id', appointmentController.updateAppointment);
-router.delete('/appointments/:id', appointmentController.deleteAppointment);
+router.put('/appointments/:id', requireTenant, appointmentController.updateAppointment);
+router.delete('/appointments/:id', requireTenant, appointmentController.deleteAppointment);
+
+// Sesiones
+router.get('/appointments/:id/sessions', requireTenant, appointmentController.getSessions);
+router.put('/sessions/:sessionId', requireTenant, appointmentController.updateSession);
 
 export default router;

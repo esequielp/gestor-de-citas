@@ -1,48 +1,47 @@
-import { Router } from 'express';
-import { reminderController } from '../controllers/reminder.controller.js';
+import { Router, Request, Response } from 'express';
+import { supabaseAdmin } from '../config/supabase.js';
+import { requireTenant, getTenantId } from '../middleware/tenant.js';
 
 const router = Router();
 
-/**
- * @swagger
- * tags:
- *   name: Recordatorios
- *   description: Procesamiento y Webhooks
- */
+// Endpoint for manual processing
+router.post('/process', requireTenant, async (req: Request, res: Response) => {
+    try {
+        const tenantId = getTenantId(req);
+        // Find pending reminders
+        const { data: reminders, error } = await supabaseAdmin
+            .from('recordatorios')
+            .select('*, cita:citas(cliente:clientes(nombre, telefono), fecha_hora, servicio:servicios(nombre))')
+            .eq('empresa_id', tenantId)
+            .eq('estado', 'PENDIENTE')
+            .lte('scheduled_at', new Date().toISOString());
 
-/**
- * @swagger
- * /reminders/process:
- *   post:
- *     summary: Ejecutar manualmente el proceso de envío de recordatorios
- *     tags: [Recordatorios]
- *     responses:
- *       200:
- *         description: Resultado del proceso
- */
-router.post('/process', reminderController.process);
+        if (error) throw error;
 
-/**
- * @swagger
- * /webhook/n8n:
- *   post:
- *     summary: Mock endpoint para recibir payload de recordatorios (Simulación n8n)
- *     tags: [Recordatorios]
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             example:
- *               cliente: "Juan Pérez"
- *               telefono: "+573001234567"
- *               fecha: "2026-02-20"
- *               hora: "10:00"
- *               servicio: "Corte"
- *     responses:
- *       200:
- *         description: Payload recibido
- */
-router.post('/n8n', reminderController.webhookN8nMock); // Montado en /webhook/n8n por el index
+        let count = 0;
+        if (reminders && reminders.length > 0) {
+            for (const rem of reminders) {
+                // Simulated n8n call
+                console.log(`[Webhook n8n] Sending ${rem.tipo} to ${rem.cita.cliente.telefono}`);
+
+                // Mark sent
+                await supabaseAdmin.from('recordatorios')
+                    .update({ estado: 'ENVIADO' })
+                    .eq('id', rem.id);
+                count++;
+            }
+        }
+
+        res.json({ success: true, message: `Procesados ${count} recordatorios` });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.post('/n8n', async (req: Request, res: Response) => {
+    // Webhook externo, no requiere tenant middleware ya que n8n trae su api key
+    console.log('[Webhook n8n payload received]:', req.body);
+    res.json({ success: true, message: 'Webhook n8n consumido correctamente' });
+});
 
 export default router;

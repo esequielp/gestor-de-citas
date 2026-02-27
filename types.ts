@@ -5,6 +5,8 @@ export interface Service {
   duration: number; // in minutes
   price: number;
   active: boolean;
+  image?: string;
+  sesiones_totales?: number;
 }
 
 export interface Branch {
@@ -33,8 +35,12 @@ export interface Employee {
   name: string;
   branchId: string;
   role: string;
+  roleLabel?: string;
   avatar: string;
-  weeklySchedule: DaySchedule[]; 
+  avatarUrl?: string;
+  email?: string;
+  phone?: string;
+  weeklySchedule: DaySchedule[];
   serviceIds: string[]; // Services this employee can perform
 }
 
@@ -59,4 +65,4 @@ export interface Appointment {
   createdAt: string;
 }
 
-export type ViewState = 'LANDING' | 'BOOKING' | 'ADMIN_LOGIN' | 'ADMIN_DASHBOARD' | 'B2B_LANDING';
+export type ViewState = 'LANDING' | 'BOOKING' | 'ADMIN_LOGIN' | 'ADMIN_DASHBOARD' | 'B2B_LANDING' | 'CHAT_WIDGET_ONLY';

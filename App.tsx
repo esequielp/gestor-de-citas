@@ -4,11 +4,13 @@ import BookingWizard from './views/BookingWizard';
 import AdminDashboard from './views/AdminDashboard';
 import LandingPage from './views/LandingPage';
 import B2BLandingPage from './views/B2BLandingPage';
-import { Button } from './components/Button';
+import LoginPage from './views/LoginPage';
 import ChatWidget from './src/components/chat/ChatWidget';
 
+// Default tenant for vegano demo
+const VEGANO_TENANT_ID = 'eb1a20ab-d82e-4d2c-ac34-64ecb0afb161';
+
 const App: React.FC = () => {
-  // Logic to check if we should go straight to booking based on URL param
   const getInitialView = (): ViewState => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -16,37 +18,60 @@ const App: React.FC = () => {
 
       if (viewParam === 'booking') return 'BOOKING';
       if (viewParam === 'b2b') return 'B2B_LANDING';
-      if (viewParam === 'admin') return 'ADMIN_LOGIN';
+      if (viewParam === 'admin') {
+        const tenantId = localStorage.getItem('tenantId');
+        if (tenantId) return 'ADMIN_DASHBOARD';
+        return 'ADMIN_LOGIN';
+      }
+      if (viewParam === 'widget') return 'CHAT_WIDGET_ONLY';
     }
     return 'LANDING';
   };
 
   const [view, setView] = useState<ViewState>(getInitialView);
 
-  // Handle browser history navigation
+  // Ensure vegano tenant is set for the booking wizard by default
+  useEffect(() => {
+    const storedTenant = localStorage.getItem('tenantId');
+    if (!storedTenant) {
+      localStorage.setItem('tenantId', VEGANO_TENANT_ID);
+    }
+  }, []);
+
   useEffect(() => {
     const handlePopState = () => {
       const params = new URLSearchParams(window.location.search);
       const viewParam = params.get('view');
-      
       if (viewParam === 'booking') setView('BOOKING');
       else if (viewParam === 'b2b') setView('B2B_LANDING');
-      else if (viewParam === 'admin') setView('ADMIN_LOGIN');
-      else setView('LANDING');
+      else if (viewParam === 'admin') {
+        const tenantId = localStorage.getItem('tenantId');
+        setView(tenantId ? 'ADMIN_DASHBOARD' : 'ADMIN_LOGIN');
+      } else if (viewParam === 'widget') {
+        setView('CHAT_WIDGET_ONLY');
+      } else {
+        setView('LANDING');
+      }
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   const handleGoHome = () => {
-    // Clear URL params without refreshing
     try {
-      const newUrl = window.location.pathname;
-      window.history.pushState({}, '', newUrl);
+      window.history.pushState({}, '', window.location.pathname);
     } catch (e) {
-      console.warn("History pushState failed:", e);
+      console.warn('History pushState failed:', e);
     }
     setView('LANDING');
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('tenantId');
+    // Re-set default tenant for booking so wizard still works after logout
+    localStorage.setItem('tenantId', VEGANO_TENANT_ID);
+    handleGoHome();
   };
 
   const renderView = () => {
@@ -59,40 +84,21 @@ const App: React.FC = () => {
         return <BookingWizard onBack={handleGoHome} />;
       case 'ADMIN_LOGIN':
         return (
-          <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 p-4">
-            <div className="bg-white rounded-xl shadow-lg p-8 max-w-sm w-full">
-              <div className="text-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-800">Acceso Administrativo</h2>
-                <p className="text-sm text-gray-500">Solo personal autorizado</p>
-              </div>
-              <form onSubmit={(e) => {
-                e.preventDefault();
-                // Mock login
-                setView('ADMIN_DASHBOARD');
-              }} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Usuario</label>
-                  <input type="text" className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="admin" defaultValue="admin" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
-                  <input type="password" className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="••••" defaultValue="admin" />
-                </div>
-                <Button fullWidth type="submit">Entrar</Button>
-                <div className="flex gap-2">
-                    <Button fullWidth variant="secondary" type="button" onClick={handleGoHome}>Inicio</Button>
-                    <Button fullWidth variant="secondary" type="button" onClick={() => setView('B2B_LANDING')}>Info B2B</Button>
-                </div>
-              </form>
-            </div>
-          </div>
+          <LoginPage
+            onSuccess={() => setView('ADMIN_DASHBOARD')}
+            onBack={handleGoHome}
+          />
         );
       case 'ADMIN_DASHBOARD':
-        return <AdminDashboard onLogout={handleGoHome} />;
+        return <AdminDashboard onLogout={handleLogout} />;
       default:
         return <div>Error: Vista desconocida</div>;
     }
   };
+
+  if (view === 'CHAT_WIDGET_ONLY') {
+    return <ChatWidget isEmbed={true} />;
+  }
 
   return (
     <>

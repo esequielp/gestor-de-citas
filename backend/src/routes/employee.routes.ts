@@ -1,143 +1,147 @@
 import { Router } from 'express';
-import prisma from '../prisma/client.js';
+import { supabaseAdmin } from '../config/supabase.js';
+import { requireTenant, getTenantId } from '../middleware/tenant.js';
 
 const router = Router();
+router.use(requireTenant);
 
-/**
- * @swagger
- * tags:
- *   name: Empleados
- *   description: Gestión de personal
- */
-
-/**
- * @swagger
- * /employees:
- *   get:
- *     summary: Listar empleados
- *     tags: [Empleados]
- *     parameters:
- *       - in: query
- *         name: branchId
- *         schema:
- *           type: string
- *         description: Filtrar por ID de sucursal
- *     responses:
- *       200:
- *         description: Lista de empleados
- */
 router.get('/', async (req, res) => {
-  const { branchId } = req.query;
-  const where = branchId ? { branchId: branchId as string } : {};
-  const employees = await prisma.employee.findMany({
-    where,
-    include: { services: true }
-  });
-  
-  res.json(employees.map(e => ({
-    ...e,
-    role: e.roleLabel,
-    avatar: e.avatarUrl,
-    serviceIds: e.services.map(s => s.serviceId)
-  })));
+    const tenantId = getTenantId(req);
+    const { branchId } = req.query;
+
+    let query = supabaseAdmin
+        .from('empleados')
+        .select('*')
+        .eq('empresa_id', tenantId);
+
+    if (branchId) {
+        query = query.eq('sucursal_id', branchId);
+    }
+
+    const { data: employees, error } = await query;
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json((employees || []).map(e => ({
+        ...e,
+        name: e.nombre,
+        branchId: e.sucursal_id,
+        role: e.role || 'Staff',
+        avatar: e.avatar_url || '',
+        serviceIds: e.service_ids || [],
+        weeklySchedule: e.weekly_schedule || []
+    })));
 });
 
-/**
- * @swagger
- * /employees:
- *   post:
- *     summary: Crear empleado
- *     tags: [Empleados]
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [name, branchId, role]
- *             properties:
- *               name:
- *                 type: string
- *               branchId:
- *                 type: string
- *               role:
- *                 type: string
- *     responses:
- *       201:
- *         description: Empleado creado
- */
-router.post('/', async (req, res) => {
-  const { name, branchId, role, avatar, serviceIds } = req.body;
-  
-  // Create employee first
-  const employee = await prisma.employee.create({
-    data: {
-      name, 
-      branchId, 
-      roleLabel: role, 
-      avatarUrl: avatar,
-      isActive: true
-    }
-  });
+router.get('/:id', async (req, res) => {
+    const tenantId = getTenantId(req);
+    const { data: employee, error } = await supabaseAdmin
+        .from('empleados')
+        .select('*')
+        .eq('id', req.params.id)
+        .eq('empresa_id', tenantId)
+        .single();
 
-  // Create relations
-  if (serviceIds && Array.isArray(serviceIds)) {
-      for (const sid of serviceIds) {
-          await prisma.employeeService.create({
-              data: {
-                  employeeId: employee.id,
-                  serviceId: sid
-              }
-          });
-      }
-  }
-  
-  res.status(201).json({
-      ...employee,
-      role: employee.roleLabel,
-      avatar: employee.avatarUrl,
-      serviceIds: serviceIds || []
-  });
-});
-
-router.put('/:id', async (req, res) => {
-    const { name, branchId, role, avatar, serviceIds, weeklySchedule } = req.body;
-    
-    const employee = await prisma.employee.update({
-        where: { id: req.params.id },
-        data: {
-            name,
-            branchId,
-            roleLabel: role,
-            avatarUrl: avatar,
-            // Handle schedule if provided (simplified for MVP)
-            // In a real app we'd update the Schedule model
-        }
-    });
-
-    if (serviceIds && Array.isArray(serviceIds)) {
-        // Clear old relations
-        await prisma.employeeService.deleteMany({ where: { employeeId: req.params.id } });
-        // Add new ones
-        for (const sid of serviceIds) {
-            await prisma.employeeService.create({
-                data: {
-                    employeeId: employee.id,
-                    serviceId: sid
-                }
-            });
-        }
-    }
+    if (error || !employee) return res.status(404).json({ error: 'Empleado no encontrado' });
 
     res.json({
         ...employee,
-        role: employee.roleLabel,
-        avatar: employee.avatarUrl,
-        serviceIds: serviceIds || []
+        name: employee.nombre,
+        branchId: employee.sucursal_id,
+        role: employee.role || 'Staff',
+        avatar: employee.avatar_url || '',
+        serviceIds: employee.service_ids || [],
+        weeklySchedule: employee.weekly_schedule || []
+    });
+});
+
+router.post('/', async (req, res) => {
+    const tenantId = getTenantId(req);
+    const { name, branchId, role, avatar, email, phone, serviceIds, weeklySchedule } = req.body;
+
+    const { data: employee, error } = await supabaseAdmin
+        .from('empleados')
+        .insert([{
+            empresa_id: tenantId,
+            sucursal_id: branchId,
+            nombre: name,
+            email: email,
+            telefono: phone,
+            role: role || 'Staff',
+            is_active: true,
+            service_ids: serviceIds || [],
+            weekly_schedule: weeklySchedule || [],
+            avatar_url: avatar || ''
+        }])
+        .select()
+        .single();
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.status(201).json({
+        ...employee,
+        name: employee.nombre,
+        branchId: employee.sucursal_id,
+        role: role || 'Staff',
+        avatar: avatar || '',
+        serviceIds: employee.service_ids || [],
+        weeklySchedule: employee.weekly_schedule || []
+    });
+});
+
+router.put('/:id', async (req, res) => {
+    const tenantId = getTenantId(req);
+    const { name, branchId, email, phone, role, is_active, serviceIds, weeklySchedule, avatar } = req.body;
+
+    // verify access
+    const { data: existing, error: errExist } = await supabaseAdmin
+        .from('empleados')
+        .select('id')
+        .eq('id', req.params.id)
+        .eq('empresa_id', tenantId)
+        .single();
+
+    if (errExist || !existing) return res.status(404).json({ error: 'Empleado no encontrado' });
+
+    const payload: any = {};
+    if (name) payload.nombre = name;
+    if (branchId) payload.sucursal_id = branchId;
+    if (email !== undefined) payload.email = email;
+    if (phone !== undefined) payload.telefono = phone;
+    if (role !== undefined) payload.role = role;
+    if (is_active !== undefined) payload.is_active = is_active;
+    if (serviceIds !== undefined) payload.service_ids = serviceIds;
+    if (weeklySchedule !== undefined) payload.weekly_schedule = weeklySchedule;
+    if (avatar !== undefined) payload.avatar_url = avatar;
+
+    const { data: employee, error } = await supabaseAdmin
+        .from('empleados')
+        .update(payload)
+        .eq('id', req.params.id)
+        .select()
+        .single();
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json({
+        ...employee,
+        name: employee.nombre,
+        branchId: employee.sucursal_id,
+        role: employee.role || 'Staff',
+        avatar: employee.avatar_url || '',
+        serviceIds: employee.service_ids || [],
+        weeklySchedule: employee.weekly_schedule || []
     });
 });
 
 router.delete('/:id', async (req, res) => {
-    await prisma.employee.delete({ where: { id: req.params.id } });
+    const tenantId = getTenantId(req);
+    const { error } = await supabaseAdmin
+        .from('empleados')
+        .delete()
+        .eq('id', req.params.id)
+        .eq('empresa_id', tenantId);
+
+    if (error) return res.status(500).json({ error: error.message });
     res.status(204).send();
 });
 

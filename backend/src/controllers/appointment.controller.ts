@@ -1,46 +1,50 @@
 import { Request, Response } from 'express';
 import { appointmentService } from '../services/appointment.service.js';
+import { getTenantId } from '../middleware/tenant.js';
+import { backendLogger } from '../utils/logger.js';
 
 export const appointmentController = {
-  
-  // GET /api/appointments
+
   async getAppointments(req: Request, res: Response) {
     try {
+      const tenantId = getTenantId(req);
       const { branchId, date } = req.query;
-      const appointments = await appointmentService.getAll({
+      const appointments = await appointmentService.getAll(tenantId, {
         branchId: branchId as string,
         date: date as string
       });
       res.json(appointments);
-    } catch (error) {
-      res.status(500).json({ error: 'Error al obtener citas' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Error al obtener citas' });
     }
   },
 
-  // GET /api/availability?employeeId=X&date=Y&time=Z
-  async checkAvailability(req: Request, res: Response) {
+  async getSlots(req: Request, res: Response) {
     try {
-      const { employeeId, date, time } = req.query;
-      
-      if (!employeeId || !date || !time) {
-        return res.status(400).json({ error: 'Faltan parámetros' });
+      const tenantId = getTenantId(req);
+      const { branchId, serviceId, date } = req.query;
+
+      if (!branchId || !serviceId || !date) {
+        return res.status(400).json({ error: 'Faltan parámetros: branchId, serviceId, date' });
       }
 
-      const isAvailable = await appointmentService.checkAvailability(
-        employeeId as string,
-        date as string,
-        Number(time)
+      const slots = await appointmentService.getAvailableSlots(
+        tenantId,
+        branchId as string,
+        serviceId as string,
+        date as string
       );
 
-      res.json({ available: isAvailable });
-    } catch (error) {
-      res.status(500).json({ error: 'Error al verificar disponibilidad' });
+      res.json(slots);
+    } catch (error: any) {
+      backendLogger.error('AppointmentController', 'Error getSlots', { error: error.message, query: req.query });
+      res.status(500).json({ error: error.message || 'Error al obtener horarios disponibles' });
     }
   },
 
-  // POST /api/appointments
   async createAppointment(req: Request, res: Response) {
     try {
+      const tenantId = getTenantId(req);
       const { branchId, serviceId, employeeId, clientId, date, time } = req.body;
 
       // Validación básica
@@ -49,7 +53,7 @@ export const appointmentController = {
       }
 
       const newAppointment = await appointmentService.create({
-        branchId, serviceId, employeeId, clientId, date, time
+        tenantId, branchId, serviceId, employeeId, clientId, date, time
       });
 
       res.status(201).json(newAppointment);
@@ -57,28 +61,52 @@ export const appointmentController = {
       if (error.message.includes('SLOT_TAKEN')) {
         return res.status(409).json({ error: 'El horario seleccionado ya no está disponible.' });
       }
-      console.error(error);
+      backendLogger.error('AppointmentController', 'Error createAppointment', { error: error.message, body: req.body });
       res.status(500).json({ error: 'Error interno del servidor' });
     }
   },
 
   async updateAppointment(req: Request, res: Response) {
     try {
+      const tenantId = getTenantId(req);
       const { id } = req.params;
-      const updated = await appointmentService.update(id, req.body);
+      const updated = await appointmentService.update(tenantId, id, req.body);
       res.json(updated);
-    } catch (error) {
-      res.status(500).json({ error: 'Error al actualizar cita' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Error al actualizar cita' });
     }
   },
 
   async deleteAppointment(req: Request, res: Response) {
     try {
+      const tenantId = getTenantId(req);
       const { id } = req.params;
-      await appointmentService.delete(id);
+      await appointmentService.delete(tenantId, id);
       res.status(204).send();
-    } catch (error) {
-      res.status(500).json({ error: 'Error al eliminar cita' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Error al eliminar cita' });
+    }
+  },
+
+  async getSessions(req: Request, res: Response) {
+    try {
+      const tenantId = getTenantId(req);
+      const { id } = req.params;
+      const sessions = await appointmentService.getSessions(tenantId, id);
+      res.json(sessions);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Error al obtener sesiones' });
+    }
+  },
+
+  async updateSession(req: Request, res: Response) {
+    try {
+      const tenantId = getTenantId(req);
+      const { sessionId } = req.params;
+      const updated = await appointmentService.updateSession(tenantId, sessionId, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Error al actualizar sesión' });
     }
   }
 };

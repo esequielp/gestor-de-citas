@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { branchController } from '../controllers/branch.controller.js';
+import { requireTenant } from '../middleware/tenant.js';
 
 const router = Router();
+router.use(requireTenant);
 
 /**
  * @swagger
@@ -28,6 +30,8 @@ const router = Router();
  */
 router.get('/', branchController.getAll);
 router.post('/', branchController.create);
+router.put('/:id', branchController.update);
+router.delete('/:id', branchController.delete);
 router.get('/:id/services', branchController.getServices);
 router.get('/:id/employees', branchController.getEmployees);
 
