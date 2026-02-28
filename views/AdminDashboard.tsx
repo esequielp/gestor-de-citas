@@ -9,6 +9,9 @@ import { HOURS_OF_OPERATION, SCHEDULE_HALF_HOURS, formatScheduleHour } from '../
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 // @ts-ignore
 import L from 'leaflet';
+// @ts-ignore
+import ReactQuill from 'react-quill';
+import 'react-quill/dist/quill.snow.css';
 
 // Helper to format time - handles both hour-integer (9) and minutesFromMidnight (540) formats
 const formatTimeValue = (time: number): string => {
@@ -3199,12 +3202,48 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
 
     const renderServiceEditorModal = () => {
         if (!editingService) return null;
+
+        const handleImproveDescription = async () => {
+            if (!editingService.name) {
+                showToast('Ingresa primero el nombre del servicio', 'error');
+                return;
+            }
+            showToast('Mejorando la descripción con IA...', 'info');
+            try {
+                const improved = await dataService.improveServiceDescription(editingService.name, editingService.description || '');
+                setEditingService({ ...editingService, description: improved });
+                showToast('¡Descripción mejorada!', 'success');
+            } catch (error) {
+                showToast('Error al mejorar descripción', 'error');
+            }
+        };
+
+        const renderQuill = () => {
+            return (
+                <div className="bg-white rounded border border-gray-300">
+                    <ReactQuill theme="snow" value={editingService.description || ''} onChange={(desc: string) => setEditingService({ ...editingService, description: desc })} placeholder="Escribe tu texto publicitario aquí..." />
+                </div>
+            );
+        };
+
         return (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-                <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-[90vh] overflow-y-auto space-y-4">
-                    <h3 className="font-bold">Servicio</h3>
+                <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto space-y-4">
+                    <div className="flex justify-between items-center mb-2">
+                        <h3 className="font-bold text-xl text-indigo-900 border-l-4 border-indigo-500 pl-3">Editar Servicio</h3>
+                    </div>
+
                     <input placeholder="Nombre" value={editingService.name} onChange={e => setEditingService({ ...editingService, name: e.target.value })} className="w-full border p-2 rounded bg-white text-gray-900" />
-                    <textarea placeholder="Descripción" value={editingService.description} onChange={e => setEditingService({ ...editingService, description: e.target.value })} className="w-full border p-2 rounded bg-white text-gray-900" />
+
+                    <div>
+                        <div className="flex justify-between items-end mb-2">
+                            <label className="block text-sm font-medium text-gray-700">Landing Page Copy / Detalles</label>
+                            <button onClick={handleImproveDescription} className="flex items-center gap-1 text-xs text-indigo-600 font-semibold bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-full hover:bg-indigo-100 transition-colors">
+                                <Sparkles size={14} /> Mejorar Copy con IA
+                            </button>
+                        </div>
+                        {renderQuill()}
+                    </div>
                     <div className="flex gap-2">
                         <input type="number" placeholder="Duración (min)" value={editingService.duration} onChange={e => setEditingService({ ...editingService, duration: Number(e.target.value) })} className="w-full border p-2 rounded bg-white text-gray-900" title="Duración en minutos" />
                         <input type="number" placeholder="Precio" value={editingService.price} onChange={e => setEditingService({ ...editingService, price: Number(e.target.value) })} className="w-full border p-2 rounded bg-white text-gray-900" title="Precio del servicio" />

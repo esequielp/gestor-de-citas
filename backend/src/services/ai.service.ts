@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import 'dotenv/config';
 import { aiToolsDefinition, executeAiTool } from './ai.tools';
 
-const AI_MODEL = 'gpt-5-mini';
+const AI_MODEL = 'gpt-4o-mini';
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
@@ -53,11 +53,11 @@ export const aiService = {
                 messages: [
                     {
                         role: 'system',
-                        content: `Eres un copywriter experto en el sector de ${businessType}. Tu misión es crear descripciones de servicios que vendan. Deben ser concisas (máximo 3-4 líneas), persuasivas, resaltar los beneficios clave y tener un tono premium y atractivo. Usa un par de emojis relacionados.`
+                        content: `Eres un copywriter publicitario estilo Hormozi, Schwartz y Halbert. Tu objetivo es crear descripciones altamente efectivas y convertibles para un servicio con sistema de reservas en el sector de ${businessType}.`
                     },
                     {
                         role: 'user',
-                        content: `Escribe una descripción comercial y muy atractiva para el servicio: "${serviceName}".\n\nDescripción o contexto original: ${description || 'N/A'}\n\nREGLAS:\n1. Ve directo al grano.\n2. No incluyas textos introductorios como "Esta es tu descripción".\n3. Máximo 4 oraciones.\n4. Si el contexto original está vacío, crea una descripción estándar excelente para el servicio nombrado.`
+                        content: `Genera un copy publicitario para el siguiente servicio:\n\nServicio: "${serviceName}"\n\nContexto original: ${description || 'N/A'}\n\nUsa estrictamente esta estructura:\n1. Hook (gancho) + curiosidad.\n2. Beneficio principal.\n3. Emoción (cómo se sentirá el cliente).\n4. Credibilidad (por qué confiar en nosotros o en este servicio).\n5. CTA (Llamado a la acción: objetivo que el usuario agende ahora).\n\nREGLAS:\n- Tono profesional, cercano y persuasivo.\n- Frases cortas.\n- Lenguaje simple.\n- En español.\n- Incluye explícitamente las secciones (pueden ser sutiles pero deben estar): Primary Text, Headline, Descripción y CTA.\n- Usa formato HTML básico (como <b>, <i>, <br>, <ul>, <li>) para que se renderice bien o Markdown.\n- Ve directo al texto, no agregues introducciones tuyas.`
                     }
                 ]
             });

@@ -19,7 +19,7 @@ const iconBranch = new L.Icon({
 });
 
 interface Props {
-  onNavigate: (view: ViewState) => void;
+  onNavigate: (view: ViewState, serviceId?: string) => void;
 }
 
 const LandingPage: React.FC<Props> = ({ onNavigate }) => {
@@ -208,8 +208,11 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
                     <span className="flex items-center gap-2 text-sm text-gray-500">
                       <Clock size={16} /> {service.duration} min
                     </span>
-                    <button onClick={() => onNavigate('BOOKING')} className="text-indigo-600 font-medium text-sm flex items-center gap-1 hover:gap-2 transition-all">
-                      Reservar <ArrowRight size={16} />
+                    <button onClick={() => onNavigate('SERVICE_DETAILS', service.id)} className="text-indigo-600 font-medium text-sm flex items-center gap-1 hover:gap-2 transition-all">
+                      Más Info <ChevronRight size={16} />
+                    </button>
+                    <button onClick={() => onNavigate('BOOKING', service.id)} className="text-white font-semibold text-sm bg-indigo-600 px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-indigo-700 hover:shadow-lg transition-all border border-indigo-700">
+                      Agendar
                     </button>
                   </div>
                 </div>
@@ -265,6 +268,71 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
                 {/* Placeholder for brands/partners logos if needed */}
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* --- TESTIMONIALS SECTION --- */}
+      <section id="testimonios" className="py-24 bg-gray-50 overflow-hidden relative">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-16 space-y-4">
+            <h3 className="text-indigo-600 font-semibold uppercase tracking-wider text-sm border border-indigo-200 inline-block px-4 py-1 rounded-full bg-indigo-50">Casos de Éxito</h3>
+            <h2 className="text-4xl font-bold text-gray-900">Lo que dicen nuestros clientes</h2>
+            <p className="text-gray-500 max-w-2xl mx-auto">Experiencias reales de personas que ya dieron el paso hacia su mejor versión.</p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-8 relative z-10">
+            {/* Testimonial 1 */}
+            <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 hover:shadow-xl transition-shadow relative">
+              <div className="text-6xl text-indigo-100 absolute top-4 right-6 font-serif leading-none">"</div>
+              <div className="flex items-center gap-2 mb-6">
+                {[1, 2, 3, 4, 5].map(i => <Star key={i} size={18} className="fill-yellow-400 text-yellow-400" />)}
+              </div>
+              <p className="text-gray-700 italic mb-6">"Los resultados superaron mis expectativas. Desde el momento que haces la reserva hasta que terminas, te hacen sentir como realeza. Totalmente recomendado."</p>
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 font-bold overflow-hidden"><img src="https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&q=80" alt="Avatar" /></div>
+                <div>
+                  <h4 className="font-bold text-gray-900">María Camila R.</h4>
+                  <p className="text-xs text-gray-500">Transformación Complete</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Testimonial 2 */}
+            <div className="bg-indigo-600 p-8 rounded-3xl shadow-lg hover:shadow-xl transition-shadow relative transform md:-translate-y-4">
+              <div className="text-6xl text-indigo-400 absolute top-4 right-6 font-serif leading-none">"</div>
+              <div className="flex items-center gap-2 mb-6">
+                {[1, 2, 3, 4, 5].map(i => <Star key={i} size={18} className="fill-yellow-400 text-yellow-400" />)}
+              </div>
+              <p className="text-white italic mb-6">"El profesionalismo es de otro nivel. Las instalaciones, la atención, todo es premium. Me volví cliente fiel en la primera cita y el trato es inmejorable."</p>
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center text-indigo-600 font-bold overflow-hidden"><img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&q=80" alt="Avatar" /></div>
+                <div>
+                  <h4 className="font-bold text-white">Roberto Sánchez</h4>
+                  <p className="text-xs text-indigo-200">Experiencia Premium</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Testimonial 3 */}
+            <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 hover:shadow-xl transition-shadow relative">
+              <div className="text-6xl text-indigo-100 absolute top-4 right-6 font-serif leading-none">"</div>
+              <div className="flex items-center gap-2 mb-6">
+                {[1, 2, 3, 4, 5].map(i => <Star key={i} size={18} className="fill-yellow-400 text-yellow-400" />)}
+              </div>
+              <p className="text-gray-700 italic mb-6">"Nunca había tenido una experiencia tan buena ni agendado tan fácil. Me orientaron perfectamente e incluso me recomendaron exactamente lo que necesitaba."</p>
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 font-bold overflow-hidden"><img src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&q=80" alt="Avatar" /></div>
+                <div>
+                  <h4 className="font-bold text-gray-900">Ana Orozco</h4>
+                  <p className="text-xs text-gray-500">Renovación de Look</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-16 text-center">
+            <Button onClick={() => onNavigate('BOOKING')} size="lg" className="rounded-full px-8 py-4 bg-indigo-900 shadow-xl hover:scale-105 transition-transform"><Sparkles className="inline mr-2" size={18} /> Únete a ellos y experimenta la calidad</Button>
           </div>
         </div>
       </section>

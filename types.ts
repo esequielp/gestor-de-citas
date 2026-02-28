@@ -65,4 +65,4 @@ export interface Appointment {
   createdAt: string;
 }
 
-export type ViewState = 'LANDING' | 'BOOKING' | 'ADMIN_LOGIN' | 'ADMIN_DASHBOARD' | 'B2B_LANDING' | 'CHAT_WIDGET_ONLY';
+export type ViewState = 'LANDING' | 'BOOKING' | 'ADMIN_LOGIN' | 'ADMIN_DASHBOARD' | 'B2B_LANDING' | 'CHAT_WIDGET_ONLY' | 'SERVICE_DETAILS';

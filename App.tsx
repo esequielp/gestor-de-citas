@@ -6,6 +6,7 @@ import LandingPage from './views/LandingPage';
 import B2BLandingPage from './views/B2BLandingPage';
 import LoginPage from './views/LoginPage';
 import ChatWidget from './src/components/chat/ChatWidget';
+import ServiceDetailsPage from './views/ServiceDetailsPage';
 
 // Default tenant for vegano demo
 const VEGANO_TENANT_ID = 'eb1a20ab-d82e-4d2c-ac34-64ecb0afb161';
@@ -29,6 +30,7 @@ const App: React.FC = () => {
   };
 
   const [view, setView] = useState<ViewState>(getInitialView);
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
 
   // Ensure vegano tenant is set for the booking wizard by default
   useEffect(() => {
@@ -77,7 +79,12 @@ const App: React.FC = () => {
   const renderView = () => {
     switch (view) {
       case 'LANDING':
-        return <LandingPage onNavigate={(target) => setView(target)} />;
+        return <LandingPage onNavigate={(target, serviceId) => {
+          if (serviceId) setSelectedServiceId(serviceId);
+          setView(target);
+        }} />;
+      case 'SERVICE_DETAILS':
+        return <ServiceDetailsPage serviceId={selectedServiceId!} onNavigate={(target) => setView(target)} onBack={() => setView('LANDING')} />;
       case 'B2B_LANDING':
         return <B2BLandingPage onNavigate={(target) => setView(target)} />;
       case 'BOOKING':
