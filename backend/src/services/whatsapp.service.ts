@@ -476,6 +476,68 @@ export const whatsappService = {
         } catch (error: any) {
             return { success: false, error: error.message };
         }
+    },
+
+    /**
+     * Send a video via WhatsApp (direct message, requires open window)
+     */
+    async sendVideo(to: string, videoUrl: string, caption: string, empresaId: string, clienteId?: string) {
+        const { phoneNumberId, accessToken } = await getCredentials(empresaId);
+        if (!phoneNumberId || !accessToken) return { success: false, error: 'Credentials missing' };
+
+        const cleanTo = to.replace(/\D/g, '');
+
+        try {
+            console.log(`📤 Sending video WA to ${cleanTo}: ${videoUrl.slice(0, 60)}...`);
+
+            const response = await fetch(`https://graph.facebook.com/${VERSION}/${phoneNumberId}/messages`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    messaging_product: 'whatsapp',
+                    recipient_type: 'individual',
+                    to: cleanTo,
+                    type: 'video',
+                    video: {
+                        link: videoUrl,
+                        caption: caption || ''
+                    }
+                }),
+            });
+
+            const data: any = await response.json();
+
+            if (data.messages && data.messages.length > 0) {
+                const waId = data.messages[0].id;
+                console.log(`✅ Video sent via WA. WA_ID: ${waId}`);
+
+                await supabaseAdmin.from('mensajes').insert([{
+                    empresa_id: empresaId,
+                    cliente_id: clienteId,
+                    telefono_remitente: phoneNumberId,
+                    telefono_destinatario: cleanTo,
+                    contenido: caption || '🎬 Video',
+                    tipo: 'SALIENTE',
+                    wa_id: waId,
+                    estado: 'ENVIADO',
+                    via: 'WHATSAPP',
+                    media_url: videoUrl,
+                    media_type: 'video',
+                    media_mime_type: 'video/mp4'
+                }]);
+
+                return { success: true, waId };
+            }
+
+            console.error('❌ WA Video send error:', JSON.stringify(data, null, 2));
+            return { success: false, error: data.error?.message || 'Error sending video' };
+        } catch (error: any) {
+            console.error('❌ sendVideo error:', error);
+            return { success: false, error: error.message };
+        }
     }
 };
 

@@ -108,5 +108,32 @@ export const appointmentController = {
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Error al actualizar sesión' });
     }
+  },
+
+  async scheduleSession(req: Request, res: Response) {
+    try {
+      const tenantId = getTenantId(req);
+      const { sessionId } = req.params;
+      const result = await appointmentService.scheduleSession(tenantId, sessionId, req.body);
+      res.json(result);
+    } catch (error: any) {
+      if (error.message.includes('SLOT_TAKEN')) {
+        res.status(409).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: error.message || 'Error al agendar sesión' });
+      }
+    }
+  },
+
+  async rescueSessions(req: Request, res: Response) {
+    try {
+      const tenantId = getTenantId(req);
+      const { id } = req.params;
+      const { total } = req.body;
+      const result = await appointmentService.rescueSessions(tenantId, id, total);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Error al rescatar sesiones' });
+    }
   }
 };

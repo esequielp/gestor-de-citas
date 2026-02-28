@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar as CalendarIcon, Users, MapPin, LogOut, Clock, X, Link as LinkIcon, Plus, Trash2, CheckCircle, Sparkles, Scissors, Edit2, DollarSign, Activity, ChevronLeft, ChevronRight, List, User, Phone, Mail, History, LayoutDashboard, TrendingUp, AlertCircle, CalendarClock, Settings, Bell, Zap, MessageCircle, MessageSquare, Send, Bot, Loader2, Globe, Search, Paperclip, Image, FileText, Mic, Download } from 'lucide-react';
+import { Calendar as CalendarIcon, Users, MapPin, LogOut, Clock, X, Link as LinkIcon, Plus, Trash2, CheckCircle, Sparkles, Scissors, Edit2, DollarSign, Activity, ChevronLeft, ChevronRight, List, User, Phone, Mail, History, LayoutDashboard, TrendingUp, AlertCircle, CalendarClock, Settings, Bell, Zap, MessageCircle, MessageSquare, Send, Bot, Loader2, Globe, Search, Paperclip, Image, FileText, Mic, Download, Square } from 'lucide-react';
 import { dataService } from '../services/dataService';
 import apiClient from '../services/apiClient';
 import { Appointment, Branch, Employee, DaySchedule, TimeRange, Service, Client } from '../types';
@@ -49,6 +49,16 @@ interface Props {
 type Tab = 'DASHBOARD' | 'APPOINTMENTS' | 'CLIENTS' | 'EMPLOYEES' | 'BRANCHES' | 'SERVICES' | 'SETTINGS' | 'MESSAGES';
 type ViewMode = 'LIST' | 'CALENDAR';
 type SettingsSubTab = 'PROFILE' | 'CHATBOT' | 'WHATSAPP' | 'REMINDERS';
+
+export interface Session {
+    id: string;
+    cita_id: string;
+    numero_sesion: number;
+    estado: string;
+    notas?: string;
+    created_at?: string;
+    updated_at?: string;
+}
 
 const DAYS_OF_WEEK = [
     { id: 1, label: 'Lun', full: 'Lunes' },
@@ -174,6 +184,12 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
     const [isSendingMessage, setIsSendingMessage] = useState(false);
     const [chatFilter, setChatFilter] = useState<'ALL' | 'WHATSAPP' | 'WEB_CHAT' | 'WEB_CONTACT'>('ALL');
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    // Voice recording state
+    const [isRecording, setIsRecording] = useState(false);
+    const [recordingDuration, setRecordingDuration] = useState(0);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const audioChunksRef = useRef<Blob[]>([]);
+    const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // Filters & View State
     const [filterEmployeeId, setFilterEmployeeId] = useState<string>('all');
@@ -251,6 +267,54 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
 
     // --- Appointment Modal State ---
     const [editingAppointment, setEditingAppointment] = useState<Partial<Appointment> | null>(null);
+    const [editingSessions, setEditingSessions] = useState<Session[]>([]);
+    const [loadingSessions, setLoadingSessions] = useState(false);
+
+    // States for scheduling a session right inside the modal
+    const [schedulingSessionId, setSchedulingSessionId] = useState<string | null>(null);
+    const [sessionScheduleData, setSessionScheduleData] = useState<{ date: string; time?: number; employeeId: string }>({ date: '', time: undefined, employeeId: '' });
+    const [isSavingSession, setIsSavingSession] = useState(false);
+    const [isSavingAppointment, setIsSavingAppointment] = useState(false);
+
+    // Dashboard Row Preview
+    const [previewApptId, setPreviewApptId] = useState<string | null>(null);
+    const [previewSessions, setPreviewSessions] = useState<Record<string, Session[]>>({});
+    const [loadingPreview, setLoadingPreview] = useState<string | null>(null);
+
+    const togglePreview = async (apptId: string) => {
+        if (previewApptId === apptId) {
+            setPreviewApptId(null);
+            return;
+        }
+
+        setPreviewApptId(apptId);
+        if (!previewSessions[apptId]) {
+            setLoadingPreview(apptId);
+            try {
+                const res = await apiClient.get(`/appointments/${apptId}/sessions`);
+                setPreviewSessions(prev => ({ ...prev, [apptId]: res.data || [] }));
+            } catch (e) {
+                console.error("Error previewing sessions", e);
+            } finally {
+                setLoadingPreview(null);
+            }
+        }
+    };
+
+    useEffect(() => {
+        if (editingAppointment?.id) {
+            setLoadingSessions(true);
+            apiClient.get(`/appointments/${editingAppointment.id}/sessions`)
+                .then(res => setEditingSessions(res.data || []))
+                .catch(err => {
+                    console.error('Error cargando sesiones', err);
+                    setEditingSessions([]);
+                })
+                .finally(() => setLoadingSessions(false));
+        } else {
+            setEditingSessions([]);
+        }
+    }, [editingAppointment?.id]);
 
     // --- Toast Notification ---
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' | 'info'; visible: boolean }>({ message: '', type: 'info', visible: false });
@@ -390,6 +454,130 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
         } catch (e) {
             console.error('Error marking as read', e);
         }
+    };
+
+    // Voice recording functions
+    const startRecording = async () => {
+        if (!selectedChat) return;
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+            // Try ogg/opus first (WhatsApp native), fallback to webm/opus
+            const mimeType = MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')
+                ? 'audio/ogg;codecs=opus'
+                : MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                    ? 'audio/webm;codecs=opus'
+                    : 'audio/webm';
+
+            const recorder = new MediaRecorder(stream, { mimeType });
+            audioChunksRef.current = [];
+
+            recorder.ondataavailable = (e) => {
+                if (e.data.size > 0) audioChunksRef.current.push(e.data);
+            };
+
+            recorder.start(250); // Collect chunks every 250ms
+            mediaRecorderRef.current = recorder;
+            setIsRecording(true);
+            setRecordingDuration(0);
+
+            // Start duration timer
+            recordingTimerRef.current = setInterval(() => {
+                setRecordingDuration(prev => prev + 1);
+            }, 1000);
+        } catch (err: any) {
+            console.error('Error accessing microphone:', err);
+            showToast('No se pudo acceder al micrófono. Verifica los permisos.', 'error');
+        }
+    };
+
+    const stopRecording = async () => {
+        if (!mediaRecorderRef.current || !selectedChat) return;
+
+        // Stop timer
+        if (recordingTimerRef.current) {
+            clearInterval(recordingTimerRef.current);
+            recordingTimerRef.current = null;
+        }
+
+        return new Promise<void>((resolve) => {
+            const recorder = mediaRecorderRef.current!;
+
+            recorder.onstop = async () => {
+                // Stop all audio tracks
+                recorder.stream.getTracks().forEach(track => track.stop());
+
+                setIsRecording(false);
+                setIsSendingMessage(true);
+
+                try {
+                    const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType });
+
+                    // Convert to base64
+                    const reader = new FileReader();
+                    const base64Promise = new Promise<string>((res) => {
+                        reader.onload = () => {
+                            const result = reader.result as string;
+                            res(result.split(',')[1]);
+                        };
+                        reader.readAsDataURL(audioBlob);
+                    });
+                    const base64 = await base64Promise;
+
+                    // Determine file extension
+                    const ext = recorder.mimeType.includes('ogg') ? 'ogg' : 'webm';
+                    const fileName = `voice_note_${Date.now()}.${ext}`;
+
+                    // Upload to storage
+                    const uploadResult = await dataService.uploadMedia(base64, fileName, recorder.mimeType);
+
+                    // Send via WhatsApp
+                    await dataService.sendMedia({
+                        phone: selectedChat.telefono || '',
+                        clientId: selectedChat.client_id,
+                        mediaUrl: uploadResult.url,
+                        mediaType: 'audio',
+                        caption: '',
+                        fileName
+                    });
+
+                    showToast('Nota de voz enviada', 'success');
+                    await loadMessages(selectedChat.id);
+                } catch (err) {
+                    console.error('Error sending voice note:', err);
+                    showToast('Error al enviar nota de voz', 'error');
+                } finally {
+                    setIsSendingMessage(false);
+                    setRecordingDuration(0);
+                    audioChunksRef.current = [];
+                    mediaRecorderRef.current = null;
+                }
+                resolve();
+            };
+
+            recorder.stop();
+        });
+    };
+
+    const cancelRecording = () => {
+        if (mediaRecorderRef.current) {
+            mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+            mediaRecorderRef.current.stop();
+        }
+        if (recordingTimerRef.current) {
+            clearInterval(recordingTimerRef.current);
+            recordingTimerRef.current = null;
+        }
+        setIsRecording(false);
+        setRecordingDuration(0);
+        audioChunksRef.current = [];
+        mediaRecorderRef.current = null;
+    };
+
+    const formatRecordingTime = (seconds: number) => {
+        const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+        const s = (seconds % 60).toString().padStart(2, '0');
+        return `${m}:${s}`;
     };
 
     const handleSendMessage = async () => {
@@ -672,101 +860,136 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                             </div>
 
                             <div className="px-6 py-4 bg-white border-t border-gray-200">
-                                <div className="flex items-center gap-3 bg-gray-50 p-2 rounded-xl border border-gray-100">
-                                    {/* Attachment button (WhatsApp only) */}
-                                    {selectedChat.via === 'WHATSAPP' && (
-                                        <>
-                                            <input
-                                                type="file"
-                                                id="media-upload"
-                                                accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx"
-                                                className="hidden"
-                                                onChange={async (e) => {
-                                                    const file = e.target.files?.[0];
-                                                    if (!file) return;
+                                {isRecording ? (
+                                    /* Recording mode */
+                                    <div className="flex items-center gap-3 bg-red-50 p-3 rounded-xl border border-red-200 animate-pulse">
+                                        <div className="w-3 h-3 bg-red-500 rounded-full animate-ping" />
+                                        <span className="text-red-600 font-bold text-sm">Grabando...</span>
+                                        <span className="text-red-500 font-mono text-sm ml-auto">{formatRecordingTime(recordingDuration)}</span>
+                                        <button
+                                            onClick={cancelRecording}
+                                            className="w-10 h-10 rounded-lg flex items-center justify-center bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors"
+                                            title="Cancelar"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                        <button
+                                            onClick={stopRecording}
+                                            className="w-10 h-10 rounded-lg flex items-center justify-center bg-red-500 text-white hover:bg-red-600 transition-colors shadow-md"
+                                            title="Enviar nota de voz"
+                                        >
+                                            <Send size={16} />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    /* Normal input mode */
+                                    <div className="flex items-center gap-3 bg-gray-50 p-2 rounded-xl border border-gray-100">
+                                        {/* Attachment button (WhatsApp only) */}
+                                        {selectedChat.via === 'WHATSAPP' && (
+                                            <>
+                                                <input
+                                                    type="file"
+                                                    id="media-upload"
+                                                    accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx"
+                                                    className="hidden"
+                                                    onChange={async (e) => {
+                                                        const file = e.target.files?.[0];
+                                                        if (!file) return;
 
-                                                    // Validate file size (max 16MB for WhatsApp)
-                                                    if (file.size > 16 * 1024 * 1024) {
-                                                        showToast('El archivo es demasiado grande (máx. 16MB)', 'error');
-                                                        return;
-                                                    }
+                                                        if (file.size > 16 * 1024 * 1024) {
+                                                            showToast('El archivo es demasiado grande (máx. 16MB)', 'error');
+                                                            return;
+                                                        }
 
-                                                    setIsSendingMessage(true);
-                                                    try {
-                                                        // Convert to base64
-                                                        const reader = new FileReader();
-                                                        const base64Promise = new Promise<string>((resolve) => {
-                                                            reader.onload = () => {
-                                                                const result = reader.result as string;
-                                                                resolve(result.split(',')[1]); // Remove data:...;base64, prefix
-                                                            };
-                                                            reader.readAsDataURL(file);
-                                                        });
-                                                        const base64 = await base64Promise;
+                                                        setIsSendingMessage(true);
+                                                        try {
+                                                            const reader = new FileReader();
+                                                            const base64Promise = new Promise<string>((resolve) => {
+                                                                reader.onload = () => {
+                                                                    const result = reader.result as string;
+                                                                    resolve(result.split(',')[1]);
+                                                                };
+                                                                reader.readAsDataURL(file);
+                                                            });
+                                                            const base64 = await base64Promise;
 
-                                                        // Upload to storage
-                                                        const uploadResult = await dataService.uploadMedia(base64, file.name, file.type);
+                                                            const uploadResult = await dataService.uploadMedia(base64, file.name, file.type);
 
-                                                        // Determine media type
-                                                        let mediaType = 'document';
-                                                        if (file.type.startsWith('image/')) mediaType = 'image';
-                                                        else if (file.type.startsWith('audio/')) mediaType = 'audio';
-                                                        else if (file.type.startsWith('video/')) mediaType = 'image'; // WA treats small videos as images
+                                                            let mediaType = 'document';
+                                                            if (file.type.startsWith('image/')) mediaType = 'image';
+                                                            else if (file.type.startsWith('audio/')) mediaType = 'audio';
+                                                            else if (file.type.startsWith('video/')) mediaType = 'video';
 
-                                                        // Send via WhatsApp
-                                                        await dataService.sendMedia({
-                                                            phone: selectedChat.telefono || '',
-                                                            clientId: selectedChat.client_id,
-                                                            mediaUrl: uploadResult.url,
-                                                            mediaType,
-                                                            caption: file.name,
-                                                            fileName: file.name
-                                                        });
+                                                            await dataService.sendMedia({
+                                                                phone: selectedChat.telefono || '',
+                                                                clientId: selectedChat.client_id,
+                                                                mediaUrl: uploadResult.url,
+                                                                mediaType,
+                                                                caption: file.name,
+                                                                fileName: file.name
+                                                            });
 
-                                                        showToast('Archivo enviado correctamente', 'success');
-                                                        await loadMessages(selectedChat.id);
-                                                    } catch (err) {
-                                                        console.error('Error uploading/sending media:', err);
-                                                        showToast('Error al enviar archivo', 'error');
-                                                    } finally {
-                                                        setIsSendingMessage(false);
-                                                        e.target.value = ''; // Reset file input
-                                                    }
-                                                }}
-                                            />
+                                                            showToast('Archivo enviado correctamente', 'success');
+                                                            await loadMessages(selectedChat.id);
+                                                        } catch (err) {
+                                                            console.error('Error uploading/sending media:', err);
+                                                            showToast('Error al enviar archivo', 'error');
+                                                        } finally {
+                                                            setIsSendingMessage(false);
+                                                            e.target.value = '';
+                                                        }
+                                                    }}
+                                                />
+                                                <button
+                                                    onClick={() => document.getElementById('media-upload')?.click()}
+                                                    disabled={isSendingMessage}
+                                                    className="w-10 h-10 rounded-lg flex items-center justify-center text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                                                    title="Adjuntar archivo"
+                                                >
+                                                    <Paperclip size={18} />
+                                                </button>
+                                            </>
+                                        )}
+                                        <input
+                                            type="text"
+                                            value={newMessage}
+                                            onChange={(e) => setNewMessage(e.target.value)}
+                                            onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                                            placeholder={selectedChat.via === 'WEB_CONTACT' ? 'Escribe tu respuesta por email...' : 'Escribe un mensaje...'}
+                                            className="flex-1 bg-transparent border-none outline-none px-3 py-1 text-sm"
+                                            disabled={isSendingMessage}
+                                        />
+                                        {/* Show mic button when input is empty (WhatsApp only), otherwise show send */}
+                                        {!newMessage.trim() && selectedChat.via === 'WHATSAPP' ? (
                                             <button
-                                                onClick={() => document.getElementById('media-upload')?.click()}
+                                                onClick={startRecording}
                                                 disabled={isSendingMessage}
-                                                className="w-10 h-10 rounded-lg flex items-center justify-center text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
-                                                title="Adjuntar archivo"
+                                                className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all ${isSendingMessage
+                                                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                                    : 'bg-green-500 text-white shadow-md hover:bg-green-600'
+                                                    }`}
+                                                title="Grabar nota de voz"
                                             >
-                                                <Paperclip size={18} />
+                                                {isSendingMessage ? <Loader2 size={18} className="animate-spin" /> : <Mic size={18} />}
                                             </button>
-                                        </>
-                                    )}
-                                    <input
-                                        type="text"
-                                        value={newMessage}
-                                        onChange={(e) => setNewMessage(e.target.value)}
-                                        onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                                        placeholder={selectedChat.via === 'WEB_CONTACT' ? 'Escribe tu respuesta por email...' : 'Escribe un mensaje...'}
-                                        className="flex-1 bg-transparent border-none outline-none px-3 py-1 text-sm"
-                                        disabled={isSendingMessage}
-                                    />
-                                    <button
-                                        onClick={handleSendMessage}
-                                        disabled={!newMessage.trim() || isSendingMessage}
-                                        className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all ${!newMessage.trim() || isSendingMessage
-                                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                                            : selectedChat.via === 'WEB_CONTACT'
-                                                ? 'bg-amber-500 text-white shadow-md hover:bg-amber-600'
-                                                : 'bg-indigo-600 text-white shadow-md hover:bg-indigo-700'
-                                            }`}
-                                    >
-                                        {isSendingMessage ? <Loader2 size={18} className="animate-spin" /> : selectedChat.via === 'WEB_CONTACT' ? <Mail size={18} /> : <Send size={18} className="ml-1" />}
-                                    </button>
-                                </div>
+                                        ) : (
+                                            <button
+                                                onClick={handleSendMessage}
+                                                disabled={!newMessage.trim() || isSendingMessage}
+                                                className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all ${!newMessage.trim() || isSendingMessage
+                                                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                                    : selectedChat.via === 'WEB_CONTACT'
+                                                        ? 'bg-amber-500 text-white shadow-md hover:bg-amber-600'
+                                                        : 'bg-indigo-600 text-white shadow-md hover:bg-indigo-700'
+                                                    }`}
+                                            >
+                                                {isSendingMessage ? <Loader2 size={18} className="animate-spin" /> : selectedChat.via === 'WEB_CONTACT' ? <Mail size={18} /> : <Send size={18} className="ml-1" />}
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
                             </div>
+
 
                         </>
                     ) : (
@@ -842,14 +1065,94 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
         });
     };
 
+    const handleUpdateSessionStatus = async (sessionId: string, estado: string) => {
+        try {
+            await apiClient.put(`/sessions/${sessionId}`, { estado });
+            setEditingSessions(prev => prev.map(s => s.id === sessionId ? { ...s, estado } : s));
+            showToast('Estado de sesión actualizado', 'success');
+        } catch (error) {
+            console.error('Error updating session', error);
+            showToast('Error al actualizar sesión', 'error');
+        }
+    };
+
+    const handleScheduleSessionSubmit = async (sessionId: string) => {
+        if (!sessionScheduleData.date || sessionScheduleData.time === undefined || !sessionScheduleData.employeeId) {
+            showToast('Completa fecha, hora y profesional.', 'warning');
+            return;
+        }
+        setIsSavingSession(true);
+        try {
+            await apiClient.post(`/sessions/${sessionId}/schedule`, sessionScheduleData);
+            showToast('Sesión agendada correctamente', 'success');
+            // Update session status in local state to PENDIENTE
+            setEditingSessions(prev => prev.map(s => {
+                if (s.id === sessionId) {
+                    let prevNotas = {};
+                    try { prevNotas = JSON.parse(s.notas || '{}'); } catch (e) { }
+                    return {
+                        ...s,
+                        estado: 'PENDIENTE',
+                        notas: JSON.stringify({
+                            ...prevNotas,
+                            agendado_cita_id: 'temp',
+                            agendado_fecha: sessionScheduleData.date,
+                            agendado_hora: sessionScheduleData.time,
+                            agendado_empleado_id: sessionScheduleData.employeeId
+                        })
+                    };
+                }
+                return s;
+            }));
+            setSchedulingSessionId(null);
+            setRefreshKey(prev => prev + 1); // Refresh calendar behind
+        } catch (error: any) {
+            if (error.response?.status === 409) {
+                showToast('Ese horario está ocupado, intenta con otro.', 'error');
+            } else {
+                showToast('Error al agendar la sesión', 'error');
+            }
+        } finally {
+            setIsSavingSession(false);
+        }
+    };
+
+    const handleRescueSessions = async () => {
+        if (!editingAppointment?.id || !editingAppointment.serviceId) return;
+        setLoadingSessions(true);
+        try {
+            const srv = services.find(s => s.id === editingAppointment.serviceId);
+            const total = srv?.sesiones_totales || 1;
+            await apiClient.post(`/appointments/${editingAppointment.id}/rescue-sessions`, { total });
+            showToast('Sesiones generadas con éxito', 'success');
+            // Reload sessions
+            const res = await apiClient.get(`/appointments/${editingAppointment.id}/sessions`);
+            setEditingSessions(res.data || []);
+        } catch (e) {
+            showToast('Error al rescatar sesiones: ' + e, 'error');
+        } finally {
+            setLoadingSessions(false);
+        }
+    };
+
     const handleSaveAppointment = async () => {
-        if (!editingAppointment || !editingAppointment.clientId || !editingAppointment.date || !editingAppointment.employeeId || !editingAppointment.serviceId) {
-            showToast('Por favor completa todos los campos requeridos (Cliente, Servicio, Profesional, Fecha, Hora).', 'warning');
+        const selectedService = services.find(s => s.id === editingAppointment?.serviceId);
+        const isMultiSession = selectedService && (selectedService.sesiones_totales || 0) > 1;
+
+        if (!editingAppointment || !editingAppointment.clientId || !editingAppointment.serviceId) {
+            showToast('Por favor selecciona Cliente y Servicio.', 'warning');
             return;
         }
 
-        // For MVP, simple check. If editing, we might clash with ourselves if we don't exclude self.
-        // Let's assume backend handles conflict for create, and for update we trust the user or backend throws error.
+        if (!isMultiSession) {
+            if (!editingAppointment.date || !editingAppointment.employeeId || editingAppointment.time === undefined) {
+                showToast('Por favor completa Fecha, Profesional y Hora.', 'warning');
+                return;
+            }
+        }
+
+        if (isSavingAppointment) return;
+        setIsSavingAppointment(true);
 
         const client = await dataService.getClientById(editingAppointment.clientId);
 
@@ -862,11 +1165,11 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
             } else {
                 await dataService.addAppointment({
                     branchId: editingAppointment.branchId!,
-                    employeeId: editingAppointment.employeeId,
+                    employeeId: editingAppointment.employeeId || employees.find(e => e.serviceIds.includes(editingAppointment.serviceId))?.id || '',
                     serviceId: editingAppointment.serviceId,
                     clientId: editingAppointment.clientId,
-                    date: editingAppointment.date,
-                    time: editingAppointment.time!,
+                    date: editingAppointment.date || new Date().toISOString().split('T')[0],
+                    time: editingAppointment.time ?? 480, // Default 8:00 AM if not set
                     clientName: client?.name || 'Cliente',
                 });
             }
@@ -875,6 +1178,8 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
             setRefreshKey(prev => prev + 1);
         } catch (e) {
             showToast('Error al guardar cita: ' + e, 'error');
+        } finally {
+            setIsSavingAppointment(false);
         }
     };
 
@@ -893,7 +1198,7 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
     };
 
     const changeCalendarDate = (days: number) => {
-        const date = new Date(calendarDate);
+        const date = new Date(calendarDate + 'T12:00:00');
         date.setDate(date.getDate() + days);
         setCalendarDate(date.toISOString().split('T')[0]);
     };
@@ -1109,29 +1414,73 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                                             const emp = employees.find(e => e.id === appt.employeeId);
                                             const br = branches.find(b => b.id === appt.branchId);
                                             return (
-                                                <tr key={appt.id} className="hover:bg-gray-50">
-                                                    <td className="px-6 py-3 font-medium text-gray-900">{appt.clientName}</td>
-                                                    <td className="px-6 py-3">
-                                                        <div className="flex flex-col">
-                                                            <span className="text-indigo-600 font-medium">{srv?.name}</span>
-                                                            <span className="text-xs text-gray-500">{emp?.name} • {br?.name}</span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-6 py-3">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="bg-gray-100 px-2 py-1 rounded text-xs font-medium">{formatDateDisplay(appt.date)}</span>
-                                                            <span className="text-gray-900 font-bold">{formatTimeValue(appt.time)}</span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-6 py-3 text-right">
-                                                        <button
-                                                            onClick={() => { setEditingAppointment(appt); }}
-                                                            className="text-gray-400 hover:text-indigo-600"
-                                                        >
-                                                            <Edit2 size={16} />
-                                                        </button>
-                                                    </td>
-                                                </tr>
+                                                <React.Fragment key={appt.id}>
+                                                    <tr className="hover:bg-gray-50">
+                                                        <td className="px-6 py-3 font-medium text-gray-900">{appt.clientName}</td>
+                                                        <td className="px-6 py-3">
+                                                            <div className="flex flex-col">
+                                                                <span className="text-indigo-600 font-medium">{srv?.name}</span>
+                                                                <span className="text-xs text-gray-500">{emp?.name} • {br?.name}</span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-6 py-3">
+                                                            {(srv?.sesiones_totales || 0) > 1 ? (
+                                                                <button
+                                                                    onClick={() => togglePreview(appt.id)}
+                                                                    className="flex items-center gap-1.5 px-2 py-1 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold uppercase tracking-wider hover:bg-indigo-100 transition-colors"
+                                                                >
+                                                                    Multi-sesión {previewApptId === appt.id ? <ChevronLeft size={10} className="rotate-90" /> : <ChevronRight size={10} />}
+                                                                </button>
+                                                            ) : (
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="bg-gray-100 px-2 py-1 rounded text-xs font-medium">{formatDateDisplay(appt.date)}</span>
+                                                                    <span className="text-gray-900 font-bold">{formatTimeValue(appt.time)}</span>
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-6 py-3 text-right">
+                                                            <button
+                                                                onClick={() => { setEditingAppointment(appt); }}
+                                                                className="text-gray-400 hover:text-indigo-600"
+                                                            >
+                                                                <Edit2 size={16} />
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                    {previewApptId === appt.id && (
+                                                        <tr>
+                                                            <td colSpan={4} className="px-6 py-2 bg-indigo-50/30">
+                                                                <div className="flex gap-3 overflow-x-auto py-2">
+                                                                    {loadingPreview === appt.id ? (
+                                                                        <span className="text-xs text-indigo-400">Cargando sesiones...</span>
+                                                                    ) : (!previewSessions[appt.id] || previewSessions[appt.id].length === 0) ? (
+                                                                        <div className="text-[10px] text-orange-500 bg-orange-50 px-3 py-1 rounded border border-orange-100 italic">
+                                                                            No hay sesiones programadas para este plan.
+                                                                        </div>
+                                                                    ) : previewSessions[appt.id]?.map(sess => {
+                                                                        let dtStr = 'Por programar';
+                                                                        let prof = '';
+                                                                        try {
+                                                                            const n = JSON.parse(sess.notas || '{}');
+                                                                            if (n.agendado_fecha) dtStr = `${formatDateDisplay(n.agendado_fecha)} - ${formatTimeValue(n.agendado_hora)}`;
+                                                                            if (n.agendado_empleado_id) prof = employees.find(e => e.id === n.agendado_empleado_id)?.name || '';
+                                                                        } catch (e) { }
+                                                                        return (
+                                                                            <div key={sess.id} className="bg-white p-2 rounded border border-indigo-100 min-w-[150px] shadow-sm shrink-0">
+                                                                                <div className="flex justify-between items-center mb-1">
+                                                                                    <span className="text-[10px] font-bold text-gray-700">SESIÓN {sess.numero_sesion}</span>
+                                                                                    <span className={`text-[8px] font-bold px-1 rounded ${sess.estado === 'PENDIENTE' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100'}`}>{sess.estado}</span>
+                                                                                </div>
+                                                                                <span className="block text-[10px] text-gray-600">{dtStr}</span>
+                                                                                {prof && <span className="block text-[8px] text-gray-400 truncate">👤 {prof}</span>}
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </React.Fragment>
                                             )
                                         })}
                                     </tbody>
@@ -1615,7 +1964,7 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                         <div className="flex bg-white rounded-lg shadow-sm border border-gray-200">
                             <button onClick={() => changeCalendarDate(-1)} className="p-2 hover:bg-gray-100 border-r border-gray-200 text-gray-600"><ChevronLeft size={20} /></button>
                             <div className="px-4 py-2 font-medium text-gray-800 min-w-[150px] text-center">
-                                {new Date(calendarDate).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })}
+                                {new Date(calendarDate + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })}
                             </div>
                             <button onClick={() => changeCalendarDate(1)} className="p-2 hover:bg-gray-100 border-l border-gray-200 text-gray-600"><ChevronRight size={20} /></button>
                         </div>
@@ -1665,7 +2014,7 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                                 {branchEmployees.map(emp => {
                                     const appt = dayAppointments.find(a => a.employeeId === emp.id && timeToHour(a.time) === hour);
                                     const service = appt ? services.find(s => s.id === appt.serviceId) : null;
-                                    const isScheduled = emp.weeklySchedule.find(s => s.dayOfWeek === new Date(calendarDate).getDay())?.isWorkDay;
+                                    const isScheduled = emp.weeklySchedule.find(s => s.dayOfWeek === new Date(calendarDate + 'T12:00:00').getDay())?.isWorkDay;
                                     const bgClass = isScheduled ? 'bg-white' : 'bg-gray-50/50 repeating-linear-gradient';
 
                                     return (
@@ -1815,25 +2164,77 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                                         const branch = branches.find(b => b.id === appt.branchId);
                                         const srv = services.find(s => s.id === appt.serviceId);
                                         return (
-                                            <tr key={appt.id} className="hover:bg-gray-50">
-                                                <td className="px-6 py-4 font-medium text-gray-900">{appt.clientName}</td>
-                                                <td className="px-6 py-4 text-indigo-600 font-medium">{srv?.name || 'Servicio General'}</td>
-                                                <td className="px-6 py-4">
-                                                    <div className="flex flex-col">
-                                                        <span>{formatDateDisplay(appt.date)}</span>
-                                                        <span className="text-xs text-gray-500">{formatTimeValue(appt.time)}</span>
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-4">{emp?.name || 'Desconocido'}</td>
-                                                <td className="px-6 py-4">{branch?.name}</td>
-                                                <td className="px-6 py-4"><span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">{appt.status}</span></td>
-                                                <td className="px-6 py-4">
-                                                    <div className="flex gap-2">
-                                                        <button onClick={() => setEditingAppointment(appt)} className="text-indigo-600 hover:text-indigo-900"><Edit2 size={16} /></button>
-                                                        <button onClick={() => handleDeleteAppointment(appt.id)} className="text-red-600 hover:text-red-900"><Trash2 size={16} /></button>
-                                                    </div>
-                                                </td>
-                                            </tr>
+                                            <React.Fragment key={appt.id}>
+                                                <tr className="hover:bg-gray-50">
+                                                    <td className="px-6 py-4 font-medium text-gray-900">{appt.clientName}</td>
+                                                    <td className="px-6 py-4 text-indigo-600 font-medium">{srv?.name || 'Servicio General'}</td>
+                                                    <td className="px-6 py-4">
+                                                        {(srv?.sesiones_totales || 0) > 1 ? (
+                                                            <button
+                                                                onClick={() => togglePreview(appt.id)}
+                                                                className="flex items-center gap-1.5 px-2 py-1 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold uppercase tracking-wider hover:bg-indigo-100 transition-colors"
+                                                            >
+                                                                Varios {previewApptId === appt.id ? <ChevronLeft size={10} className="rotate-90" /> : <ChevronRight size={10} />}
+                                                            </button>
+                                                        ) : (
+                                                            <div className="flex flex-col">
+                                                                <span>{formatDateDisplay(appt.date)}</span>
+                                                                <span className="text-xs text-gray-500">{formatTimeValue(appt.time)}</span>
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        {(srv?.sesiones_totales || 0) > 1 ? 'Gestionado por sesión' : (emp?.name || 'Desconocido')}
+                                                    </td>
+                                                    <td className="px-6 py-4">{branch?.name}</td>
+                                                    <td className="px-6 py-4">
+                                                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${appt.status === 'confirmed' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                                            {appt.status}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <div className="flex gap-2">
+                                                            <button onClick={() => setEditingAppointment(appt)} className="text-indigo-600 hover:text-indigo-900"><Edit2 size={16} /></button>
+                                                            <button onClick={() => handleDeleteAppointment(appt.id)} className="text-red-600 hover:text-red-900"><Trash2 size={16} /></button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                                {previewApptId === appt.id && (
+                                                    <tr className="bg-indigo-50/20">
+                                                        <td colSpan={7} className="px-8 py-3">
+                                                            <div className="flex gap-4 overflow-x-auto pb-2">
+                                                                {loadingPreview === appt.id ? (
+                                                                    <span className="text-xs text-indigo-400">Cargando detalle de sesiones...</span>
+                                                                ) : (!previewSessions[appt.id] || previewSessions[appt.id].length === 0) ? (
+                                                                    <div className="text-[10px] text-orange-500 bg-orange-50 px-3 py-1.5 rounded border border-orange-100 italic">
+                                                                        No hay sesiones programadas para este plan.
+                                                                    </div>
+                                                                ) : previewSessions[appt.id]?.map(sess => {
+                                                                    let dtInfo = 'Sin programar';
+                                                                    let pName = '';
+                                                                    try {
+                                                                        const n = JSON.parse(sess.notas || '{}');
+                                                                        if (n.agendado_fecha) dtInfo = `${formatDateDisplay(n.agendado_fecha)} @ ${formatTimeValue(n.agendado_hora)}`;
+                                                                        if (n.agendado_empleado_id) pName = employees.find(e => e.id === n.agendado_empleado_id)?.name || 'Prof.';
+                                                                    } catch (e) { }
+                                                                    return (
+                                                                        <div key={sess.id} className="bg-white p-3 rounded-lg border border-indigo-100 min-w-[200px] shadow-sm shrink-0">
+                                                                            <div className="flex justify-between items-center mb-1">
+                                                                                <span className="text-xs font-bold text-gray-800 uppercase">Sesión {sess.numero_sesion}</span>
+                                                                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${sess.estado === 'COMPLETADA' ? 'bg-green-100 text-green-700' :
+                                                                                    sess.estado === 'PENDIENTE' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100'
+                                                                                    }`}>{sess.estado}</span>
+                                                                            </div>
+                                                                            <div className="text-xs text-gray-600">{dtInfo}</div>
+                                                                            {pName && <div className="text-[10px] text-indigo-500 mt-1 font-medium">👤 {pName}</div>}
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </React.Fragment>
                                         );
                                     })}
                                 </tbody>
@@ -2250,6 +2651,8 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
         // Filter services by branch
         const modalBranch = branches.find(b => b.id === modalBranchId);
         const modalServices = modalBranch ? services.filter(s => (modalBranch.serviceIds || []).includes(s.id)) : [];
+        const selectedService = services.find(s => s.id === editingAppointment.serviceId);
+        const isMultiSession = selectedService && (selectedService.sesiones_totales || 0) > 1;
 
         return (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -2301,50 +2704,179 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                             </select>
                         </div>
 
-                        {/* Employee Selection */}
-                        <div>
-                            <label className="text-xs font-bold text-gray-500 uppercase">Profesional</label>
-                            <select
-                                value={editingAppointment.employeeId || ''}
-                                onChange={e => setEditingAppointment({ ...editingAppointment, employeeId: e.target.value })}
-                                className="w-full p-2 border rounded bg-white"
-                                disabled={!editingAppointment.branchId || !editingAppointment.serviceId}
-                            >
-                                <option value="">Seleccionar Profesional</option>
-                                {modalEmployees.filter(e => e.serviceIds.includes(editingAppointment.serviceId!)).map(e => (
-                                    <option key={e.id} value={e.id}>{e.name}</option>
-                                ))}
-                            </select>
-                        </div>
+                        {/* Multi-session indicator */}
+                        {isMultiSession && (
+                            <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-100 flex items-center gap-3 animate-fade-in">
+                                <div className="bg-white p-2 rounded-lg text-indigo-600 shadow-sm">
+                                    <Activity size={20} />
+                                </div>
+                                <div className="flex-1">
+                                    <span className="block text-sm font-bold text-indigo-900">Plan de {selectedService?.sesiones_totales} sesiones</span>
+                                    <span className="text-xs text-indigo-600">Este servicio se gestiona por sesiones individuales. Configura la programación de cada una en el panel inferior.</span>
+                                </div>
+                            </div>
+                        )}
 
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="text-xs font-bold text-gray-500 uppercase">Fecha</label>
-                                <input
-                                    type="date"
-                                    value={editingAppointment.date || ''}
-                                    onChange={e => setEditingAppointment({ ...editingAppointment, date: e.target.value })}
-                                    className="w-full p-2 border rounded"
-                                />
-                            </div>
-                            <div>
-                                <label className="text-xs font-bold text-gray-500 uppercase">Hora</label>
-                                <select
-                                    value={editingAppointment.time ?? ''}
-                                    onChange={e => setEditingAppointment({ ...editingAppointment, time: Number(e.target.value) })}
-                                    className="w-full p-2 border rounded bg-white"
-                                >
-                                    <option value="">Hora</option>
-                                    {SCHEDULE_HALF_HOURS.filter(h => h >= 8 && h <= 19).map(h => {
-                                        const mins = Math.floor(h) * 60 + (h % 1 === 0.5 ? 30 : 0);
-                                        return <option key={h} value={mins}>{formatScheduleHour(h)}</option>;
-                                    })}
-                                </select>
-                            </div>
-                        </div>
+                        {/* Employee Selection */}
+                        {!isMultiSession && (
+                            <>
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 uppercase">Profesional</label>
+                                    <select
+                                        value={editingAppointment.employeeId || ''}
+                                        onChange={e => setEditingAppointment({ ...editingAppointment, employeeId: e.target.value })}
+                                        className="w-full p-2 border rounded bg-white"
+                                        disabled={!editingAppointment.branchId || !editingAppointment.serviceId}
+                                    >
+                                        <option value="">Seleccionar Profesional</option>
+                                        {modalEmployees.filter(e => e.serviceIds.includes(editingAppointment.serviceId!)).map(e => (
+                                            <option key={e.id} value={e.id}>{e.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-500 uppercase">Fecha</label>
+                                        <input
+                                            type="date"
+                                            value={editingAppointment.date || ''}
+                                            onChange={e => setEditingAppointment({ ...editingAppointment, date: e.target.value })}
+                                            className="w-full p-2 border rounded"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-500 uppercase">Hora</label>
+                                        <select
+                                            value={editingAppointment.time ?? ''}
+                                            onChange={e => setEditingAppointment({ ...editingAppointment, time: Number(e.target.value) })}
+                                            className="w-full p-2 border rounded bg-white"
+                                        >
+                                            <option value="">Hora</option>
+                                            {SCHEDULE_HALF_HOURS.filter(h => h >= 8 && h <= 19).map(h => {
+                                                const mins = Math.floor(h) * 60 + (h % 1 === 0.5 ? 30 : 0);
+                                                return <option key={h} value={mins}>{formatScheduleHour(h)}</option>;
+                                            })}
+                                        </select>
+                                    </div>
+                                </div>
+                            </>
+                        )}
                     </div>
 
-                    <div className="pt-4 flex justify-between">
+                    {/* SESSIONS DISPLAY */}
+                    {editingAppointment.id && (loadingSessions || editingSessions.length > 0 || isMultiSession) && (
+                        <div className="pt-4 border-t border-gray-100">
+                            <h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+                                <Activity size={16} className="text-indigo-600" /> Control de Sesiones
+                            </h4>
+                            {loadingSessions ? (
+                                <p className="text-xs text-gray-500 text-center py-2">Cargando sesiones...</p>
+                            ) : editingSessions.length === 0 && isMultiSession ? (
+                                <div className="p-4 bg-orange-50 rounded-lg border border-orange-100 text-center">
+                                    <p className="text-xs text-orange-800 mb-2">No se encontraron sesiones para este plan.</p>
+                                    <Button size="xs" onClick={handleRescueSessions} variant="secondary">Generar Sesiones</Button>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {editingSessions.map(session => (
+                                        <div key={session.id} className="flex flex-col bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <span className="text-xs font-bold text-gray-800 block">Sesión {session.numero_sesion}</span>
+                                                    <span className="text-[10px] text-gray-500">{new Date(session.created_at || '').toLocaleDateString('es-ES')}</span>
+                                                    {(() => {
+                                                        try {
+                                                            const n = JSON.parse(session.notas || '{}');
+                                                            if (n.agendado_cita_id) {
+                                                                const timeStr = typeof n.agendado_hora === 'number' ? formatScheduleHour(n.agendado_hora / 60) : '';
+                                                                const profName = modalEmployees.find(e => e.id === n.agendado_empleado_id)?.name;
+                                                                return (
+                                                                    <div className="mt-1 bg-indigo-50/50 p-1.5 rounded border border-indigo-100">
+                                                                        <span className="text-[10px] text-indigo-700 font-medium flex items-center gap-1">
+                                                                            🗓️ {n.agendado_fecha ? new Date(n.agendado_fecha + 'T12:00:00').toLocaleDateString('es-ES') : ''} a las {timeStr}
+                                                                        </span>
+                                                                        {profName && <span className="text-[10px] text-gray-600 font-medium flex items-center gap-1 mt-0.5">👤 Prof. {profName}</span>}
+                                                                    </div>
+                                                                );
+                                                            }
+                                                        } catch (e) { return null; }
+                                                        return null;
+                                                    })()}
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    {(session.estado === 'POR_PROGRAMAR' || session.estado === 'PENDIENTE') && schedulingSessionId !== session.id && (
+                                                        <button onClick={() => {
+                                                            setSchedulingSessionId(session.id);
+                                                            let initialData = { date: '', time: undefined as number | undefined, employeeId: '' };
+                                                            try {
+                                                                const n = JSON.parse(session.notas || '{}');
+                                                                if (n.agendado_fecha) initialData.date = n.agendado_fecha;
+                                                                if (n.agendado_hora !== undefined) initialData.time = n.agendado_hora;
+                                                                if (n.agendado_empleado_id) initialData.employeeId = n.agendado_empleado_id;
+                                                            } catch (e) { }
+                                                            setSessionScheduleData(initialData);
+                                                        }} className="text-xs font-bold text-indigo-600 hover:underline">
+                                                            {session.estado === 'PENDIENTE' ? 'Reagendar' : 'Agendar'}
+                                                        </button>
+                                                    )}
+                                                    <select
+                                                        value={session.estado}
+                                                        onChange={(e) => handleUpdateSessionStatus(session.id, e.target.value)}
+                                                        className={`text-xs font-medium rounded px-2 py-1 outline-none border-none ${session.estado === 'COMPLETADA' ? 'bg-green-100 text-green-800' :
+                                                            session.estado === 'CANCELADA' ? 'bg-red-100 text-red-800' :
+                                                                session.estado === 'PENDIENTE' ? 'bg-yellow-100 text-yellow-800' :
+                                                                    'bg-gray-200 text-gray-800'
+                                                            }`}
+                                                    >
+                                                        <option value="POR_PROGRAMAR">Por Programar</option>
+                                                        <option value="PENDIENTE">Pendiente</option>
+                                                        <option value="COMPLETADA">Completada</option>
+                                                        <option value="CANCELADA">Cancelada</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            {/* AGENDAR SESION FORM */}
+                                            {schedulingSessionId === session.id && (
+                                                <div className="mt-3 pt-3 border-t border-gray-200 grid grid-cols-2 lg:grid-cols-3 gap-2">
+                                                    <div className="col-span-2 lg:col-span-3">
+                                                        <label className="text-[10px] font-bold text-gray-500 uppercase">Profesional</label>
+                                                        <select value={sessionScheduleData.employeeId} onChange={e => setSessionScheduleData({ ...sessionScheduleData, employeeId: e.target.value })} className="w-full mt-1 p-1.5 text-xs border rounded bg-white">
+                                                            <option value="">Seleccionar</option>
+                                                            {modalEmployees.filter(e => e.serviceIds.includes(editingAppointment.serviceId!)).map(e => (
+                                                                <option key={e.id} value={e.id}>{e.name}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[10px] font-bold text-gray-500 uppercase">Fecha</label>
+                                                        <input type="date" value={sessionScheduleData.date} onChange={e => setSessionScheduleData({ ...sessionScheduleData, date: e.target.value })} className="w-full mt-1 p-1.5 text-xs border rounded bg-white" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[10px] font-bold text-gray-500 uppercase">Hora</label>
+                                                        <select value={sessionScheduleData.time ?? ''} onChange={e => setSessionScheduleData({ ...sessionScheduleData, time: Number(e.target.value) })} className="w-full mt-1 p-1.5 text-xs border rounded bg-white">
+                                                            <option value="">Hora</option>
+                                                            {SCHEDULE_HALF_HOURS.filter(h => h >= 8 && h <= 19).map(h => {
+                                                                const mins = Math.floor(h) * 60 + (h % 1 === 0.5 ? 30 : 0);
+                                                                return <option key={h} value={mins}>{formatScheduleHour(h)}</option>;
+                                                            })}
+                                                        </select>
+                                                    </div>
+                                                    <div className="col-span-2 lg:col-span-3 flex items-end justify-end gap-2 mt-2">
+                                                        <button disabled={isSavingSession} onClick={() => setSchedulingSessionId(null)} className="text-xs text-gray-500 hover:underline">Cancelar</button>
+                                                        <button disabled={isSavingSession} onClick={() => handleScheduleSessionSubmit(session.id)} className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded">{isSavingSession ? '...' : 'Guardar'}</button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <div className="pt-4 flex justify-between border-t border-gray-100 mt-2">
                         <div>
                             {editingAppointment.id && (
                                 <Button variant="secondary" onClick={() => handleDeleteAppointment(editingAppointment.id!)}>
@@ -2354,11 +2886,13 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                         </div>
                         <div className="flex gap-2">
                             <Button variant="secondary" onClick={() => setEditingAppointment(null)}>Cancelar</Button>
-                            <Button onClick={handleSaveAppointment}>Guardar Cita</Button>
+                            <Button onClick={handleSaveAppointment} disabled={isSavingAppointment}>
+                                {isSavingAppointment ? 'Guardando...' : 'Guardar Cita'}
+                            </Button>
                         </div>
                     </div>
                 </div>
-            </div>
+            </div >
         );
     };
 

@@ -4,6 +4,16 @@ import { whatsappService } from '../services/whatsapp.service.js';
 import { aiService } from '../services/ai.service.js';
 import { emailService } from '../services/email.service.js';
 import { requireTenant, getTenantId } from '../middleware/tenant.js';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const ffmpegStatic = require('ffmpeg-static') as string;
+const ffmpeg = require('fluent-ffmpeg');
+import os from 'os';
+import path from 'path';
+import fs from 'fs';
+
+// Set ffmpeg binary path
+if (ffmpegStatic) ffmpeg.setFfmpegPath(ffmpegStatic);
 
 const router = Router();
 
@@ -162,18 +172,8 @@ router.post('/webhook', async (req, res) => {
     }
 
     if (empresaId) {
-        // Download media if present
-        let mediaUrl: string | null = null;
-        if (mediaId && empresaId) {
-            const downloadResult = await whatsappService.downloadMedia(mediaId, empresaId, mediaMimeType);
-            mediaUrl = downloadResult.url;
-            if (downloadResult.error) {
-                console.error(`⚠️ Media download failed: ${downloadResult.error}`);
-            }
-        }
-
-        // 2. Save incoming message
-        await supabaseAdmin.from('mensajes').insert([{
+        // 2. Save incoming message immediately (without media_url to not block webhook)
+        const { data: savedMsg } = await supabaseAdmin.from('mensajes').insert([{
             empresa_id: empresaId,
             cliente_id: client?.id,
             telefono_remitente: from,
@@ -183,14 +183,38 @@ router.post('/webhook', async (req, res) => {
             wa_id: waId,
             estado: 'RECIBIDO',
             via: 'WHATSAPP',
-            media_url: mediaUrl,
+            media_url: null,
             media_type: mediaType || null,
             media_mime_type: mediaMimeType || null
-        }]);
+        }]).select('id').single();
 
-
-        // 3. Trigger AI Auto-reply (Async block so we don't block the webhook response)
+        // 3. Async block: Download media (if any) then trigger AI Auto-reply
+        // Both run together so the AI can receive the media context (image/audio transcription)
         (async () => {
+            let mediaUrl: string | null = null;
+
+            // Step A: Download media if present
+            if (mediaId && empresaId) {
+                try {
+                    const downloadResult = await whatsappService.downloadMedia(mediaId, empresaId!, mediaMimeType);
+                    if (downloadResult.url) {
+                        mediaUrl = downloadResult.url;
+                        // Update the message row with the media URL
+                        if (savedMsg?.id) {
+                            await supabaseAdmin.from('mensajes')
+                                .update({ media_url: downloadResult.url })
+                                .eq('id', savedMsg.id);
+                            console.log(`✅ Media URL updated for message ${savedMsg.id}`);
+                        }
+                    } else {
+                        console.error(`⚠️ Media download failed for ${mediaId}: ${downloadResult.error}`);
+                    }
+                } catch (err) {
+                    console.error('❌ Async media download error:', err);
+                }
+            }
+
+            // Step B: AI Auto-reply (with media context if available)
             try {
                 const { data: config } = await supabaseAdmin
                     .from('configuraciones')
@@ -222,6 +246,13 @@ router.post('/webhook', async (req, res) => {
                         .eq('empresa_id', empresaId)
                         .eq('is_active', true);
 
+                    // Build media context for AI (image vision / audio transcription)
+                    const mediaCtx = (mediaType && mediaUrl) ? {
+                        mediaUrl,
+                        mediaType,
+                        mediaMimeType
+                    } : undefined;
+
                     const aiResponse = await aiService.generateResponse(
                         msgBody,
                         history,
@@ -237,19 +268,27 @@ router.post('/webhook', async (req, res) => {
                             businessName: config.chatbot_business_name,
                             personality: config.chatbot_personality,
                             customInstructions: config.chatbot_custom_instructions
-                        }
+                        },
+                        mediaCtx,
+                        (empresaId && client) ? {
+                            tenantId: empresaId,
+                            clientId: client.id,
+                            clientName: client.nombre || 'Cliente'
+                        } : undefined
                     );
 
                     // Send via WhatsApp
-                    await whatsappService.sendMessage(from, aiResponse, empresaId, client?.id);
+                    await whatsappService.sendMessage(from, aiResponse, empresaId!, client?.id);
                 }
             } catch (aiErr) {
                 console.error('❌ Error in AI WhatsApp auto-reply:', aiErr);
             }
         })();
+
     }
     res.sendStatus(200);
 });
+
 
 // API for the frontend to list messages
 router.get('/messages/:identifier', requireTenant, async (req, res) => {
@@ -560,6 +599,41 @@ router.post('/reply-contact', requireTenant, async (req, res) => {
     }
 });
 
+/**
+ * Helper: Convert webm audio buffer to ogg using ffmpeg.
+ * Required because WhatsApp API only accepts ogg/opus, not webm.
+ */
+async function convertWebmToOgg(inputBuffer: Buffer): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+        const tmpInput = path.join(os.tmpdir(), `wa_input_${Date.now()}.webm`);
+        const tmpOutput = path.join(os.tmpdir(), `wa_output_${Date.now()}.ogg`);
+
+        fs.writeFileSync(tmpInput, inputBuffer);
+
+        ffmpeg(tmpInput)
+            .audioCodec('libopus')
+            .format('ogg')
+            .on('end', () => {
+                try {
+                    const outputBuffer = fs.readFileSync(tmpOutput);
+                    // Cleanup temp files
+                    fs.unlinkSync(tmpInput);
+                    fs.unlinkSync(tmpOutput);
+                    resolve(outputBuffer);
+                } catch (err) {
+                    reject(err);
+                }
+            })
+            .on('error', (err: Error) => {
+                // Cleanup temp files on error
+                try { fs.unlinkSync(tmpInput); } catch (_) { }
+                try { fs.unlinkSync(tmpOutput); } catch (_) { }
+                reject(err);
+            })
+            .save(tmpOutput);
+    });
+}
+
 // Upload media from admin (base64 encoded) to Supabase Storage
 router.post('/upload-media', requireTenant, async (req, res) => {
     const { fileBase64, fileName, mimeType } = req.body;
@@ -570,13 +644,29 @@ router.post('/upload-media', requireTenant, async (req, res) => {
     }
 
     try {
-        const buffer = Buffer.from(fileBase64, 'base64');
-        const storagePath = `${tenantId}/${Date.now()}_${fileName}`;
+        let buffer = Buffer.from(fileBase64, 'base64');
+        let finalMimeType = mimeType || 'application/octet-stream';
+        let finalFileName = fileName;
+
+        // Convert webm audio to ogg (WhatsApp only accepts ogg/opus)
+        if (mimeType && (mimeType.includes('webm') || mimeType.includes('audio/webm'))) {
+            console.log('🔄 Converting webm audio to ogg/opus for WhatsApp compatibility...');
+            try {
+                buffer = await convertWebmToOgg(buffer);
+                finalMimeType = 'audio/ogg; codecs=opus';
+                finalFileName = fileName.replace(/\.webm$/, '.ogg');
+                console.log('✅ Audio converted successfully to ogg/opus');
+            } catch (convErr) {
+                console.error('⚠️ Audio conversion failed, uploading as-is:', convErr);
+            }
+        }
+
+        const storagePath = `${tenantId}/${Date.now()}_${finalFileName}`;
 
         const { data, error } = await supabaseAdmin.storage
             .from('chat_media')
             .upload(storagePath, buffer, {
-                contentType: mimeType || 'application/octet-stream',
+                contentType: finalMimeType,
                 upsert: false
             });
 
@@ -610,6 +700,9 @@ router.post('/send-media', requireTenant, async (req, res) => {
                 break;
             case 'audio':
                 result = await whatsappService.sendAudio(phone, mediaUrl, tenantId, clientId);
+                break;
+            case 'video':
+                result = await whatsappService.sendVideo(phone, mediaUrl, caption || '', tenantId, clientId);
                 break;
             case 'document':
                 result = await whatsappService.sendDocument(phone, mediaUrl, fileName || 'file', caption || '', tenantId, clientId);

@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import 'dotenv/config';
+import { aiToolsDefinition, executeAiTool } from './ai.tools';
 
 const AI_MODEL = 'gpt-4o-mini';
 
@@ -23,7 +24,14 @@ interface ChatbotConfig {
     customInstructions: string;
 }
 
-/** Valores por defecto cuando el tenant no ha personaliiado su chatbot */
+/** Contexto de media adjunta al mensaje */
+interface MediaContext {
+    mediaUrl?: string | null;
+    mediaType?: string | null; // 'image', 'audio', 'video', 'document'
+    mediaMimeType?: string | null;
+}
+
+/** Valores por defecto cuando el tenant no ha personalizado su chatbot */
 const DEFAULT_CHATBOT_CONFIG: ChatbotConfig = {
     businessType: 'Centro de belleza, spa y cuidado personal',
     businessName: '',
@@ -82,23 +90,19 @@ export const aiService = {
                 return { serviceId: null, explanation: 'No hay servicios disponibles en este momento.' };
             }
 
-            // Merge con defaults
             const cfg: ChatbotConfig = {
                 ...DEFAULT_CHATBOT_CONFIG,
                 ...config,
             };
 
-            // Construir el catálogo de servicios como contexto para la IA
             const catalogText = services.map((s, i) =>
                 `${i + 1}. ID: "${s.id}" | Nombre: "${s.name}" | Descripción: "${s.description || 'Sin descripción'}" | Precio: $${s.price} | Duración: ${s.duration} min`
             ).join('\n');
 
-            // Construir el nombre del negocio en el prompt si está configurado
             const businessIdentity = cfg.businessName
                 ? `Eres el asistente virtual de "${cfg.businessName}", un negocio de tipo: ${cfg.businessType}.`
                 : `Eres un asistente virtual experto de un negocio de tipo: ${cfg.businessType}.`;
 
-            // Instrucciones adicionales del tenant
             const extraInstructions = cfg.customInstructions
                 ? `\n\nINSTRUCCIONES ADICIONALES DEL NEGOCIO:\n${cfg.customInstructions}`
                 : '';
@@ -144,12 +148,10 @@ IMPORTANTE: Responde SOLO con el JSON, sin texto adicional ni backticks.`
 
             let content = response.choices[0].message.content?.trim() || '';
 
-            // Log for debugging if content is empty
             if (!content) {
                 console.log('AI response message:', JSON.stringify(response.choices[0].message));
             }
 
-            // Strip markdown code fences if the model wraps JSON in ```json ... ```
             if (content.startsWith('```')) {
                 content = content.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '').trim();
             }
@@ -175,13 +177,57 @@ IMPORTANTE: Responde SOLO con el JSON, sin texto adicional ni backticks.`
     },
 
     /**
-     * Genera una respuesta de chat fluida basada en la personalidad y contexto
+     * Transcribe audio using OpenAI Whisper API.
+     * Downloads the audio from the URL, sends to Whisper, returns text.
+     */
+    async transcribeAudio(audioUrl: string): Promise<string> {
+        try {
+            if (!process.env.OPENAI_API_KEY) return '';
+
+            console.log('🎙️ Transcribing audio with Whisper...');
+
+            // Download the audio file
+            const audioResponse = await fetch(audioUrl);
+            if (!audioResponse.ok) {
+                console.error('❌ Failed to download audio for transcription:', audioResponse.status);
+                return '';
+            }
+
+            const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
+
+            // Detect extension from URL
+            const ext = audioUrl.match(/\.(\w+)(?:\?|$)/)?.[1] || 'ogg';
+
+            // Create a File object for the Whisper API
+            const audioFile = new File([audioBuffer], `audio.${ext}`, {
+                type: ext === 'ogg' ? 'audio/ogg' : ext === 'mp3' ? 'audio/mpeg' : 'audio/webm'
+            });
+
+            const transcription = await openai.audio.transcriptions.create({
+                model: 'whisper-1',
+                file: audioFile,
+                language: 'es',
+            });
+
+            console.log(`✅ Audio transcribed: "${transcription.text.slice(0, 100)}..."`);
+            return transcription.text;
+        } catch (error) {
+            console.error('❌ Error transcribing audio:', error);
+            return '';
+        }
+    },
+
+    /**
+     * Genera una respuesta de chat fluida basada en la personalidad y contexto.
+     * Supports multimodal content: images (via GPT-4o-mini vision) and audio (via Whisper transcription).
      */
     async generateResponse(
         userMessage: string,
         history: { role: 'user' | 'assistant'; content: string }[],
         services: ServiceForAI[],
-        config?: Partial<ChatbotConfig>
+        config?: Partial<ChatbotConfig>,
+        mediaContext?: MediaContext,
+        envContext?: { tenantId: string; clientId: string; clientName: string }
     ): Promise<string> {
         try {
             if (!process.env.OPENAI_API_KEY) {
@@ -205,6 +251,42 @@ IMPORTANTE: Responde SOLO con el JSON, sin texto adicional ni backticks.`
                 ? `\n\nREGLAS DE NEGOCIO IMPORTANTES:\n${cfg.customInstructions}`
                 : '';
 
+            // Build the user content (text or multimodal)
+            let userContent: any = userMessage;
+
+            // Handle media context
+            if (mediaContext?.mediaUrl && mediaContext.mediaType) {
+                if (mediaContext.mediaType === 'image') {
+                    // GPT-4o-mini supports vision: pass image as content block
+                    console.log('🖼️ Sending image to AI for vision analysis...');
+                    userContent = [
+                        {
+                            type: 'text',
+                            text: userMessage === '📷 Imagen'
+                                ? 'El cliente me envió esta imagen. Descríbela brevemente y responde de forma útil según el contexto del negocio.'
+                                : userMessage
+                        },
+                        {
+                            type: 'image_url',
+                            image_url: { url: mediaContext.mediaUrl, detail: 'low' }
+                        }
+                    ];
+                } else if (mediaContext.mediaType === 'audio') {
+                    // Transcribe audio with Whisper, then pass text to GPT
+                    const transcription = await this.transcribeAudio(mediaContext.mediaUrl);
+                    if (transcription) {
+                        userContent = `[El cliente envió un mensaje de voz. Transcripción: "${transcription}"]`;
+                        console.log('🎙️ Using audio transcription as AI input');
+                    } else {
+                        userContent = 'El cliente envió un audio que no pude transcribir. Responde amablemente preguntándole si puede repetir su mensaje o escribirlo.';
+                    }
+                } else if (mediaContext.mediaType === 'video') {
+                    userContent = 'El cliente envió un video. Responde amablemente indicando que recibiste el video y preguntando en qué puedes ayudarle.';
+                } else if (mediaContext.mediaType === 'document') {
+                    userContent = `El cliente envió un documento (${userMessage}). Responde amablemente confirmando que lo recibiste y preguntando si necesita algo más.`;
+                }
+            }
+
             const messages: any[] = [
                 {
                     role: 'system',
@@ -224,20 +306,55 @@ REGLAS DE RESPUESTA:
 5. NO inventes servicios que no están en la lista.
 6. Habla siempre en español.
 7. IMPORTANTE: Para resaltar texto en negrita, usa un solo asterisco al principio y al final (ejemplo: *texto en negrita*), NO uses doble asterisco.
-8. IMPORTANTE: Siempre que menciones fechas, usa el formato dd/mm/YYYY (ejemplo: 27/02/2026). NUNCA uses el formato YYYY-MM-DD.`
+8. IMPORTANTE: Siempre que menciones fechas, usa el formato dd/mm/YYYY (ejemplo: 27/02/2026). NUNCA uses el formato YYYY-MM-DD.
+9. Si el cliente envía una imagen, analízala y responde según lo que ves.
+10. Si el cliente envía un audio, ya fue transcrito para ti. Responde al contenido de la transcripción de forma natural, sin mencionar que fue un audio transcrito.`
                 },
-                ...history.slice(-6), // Tomamos los últimos 6 mensajes para contexto
-                { role: 'user', content: userMessage }
+                ...history.slice(-6),
+                { role: 'user', content: userContent }
             ];
 
-            const response = await openai.chat.completions.create({
+            let response = await openai.chat.completions.create({
                 model: AI_MODEL,
                 messages,
                 temperature: 0.7,
                 max_tokens: 500,
+                tools: envContext ? (aiToolsDefinition as any) : undefined,
+                tool_choice: envContext ? "auto" : "none",
             });
 
+            const responseMessage = response.choices[0].message;
+
+            if (responseMessage.tool_calls && envContext) {
+                console.log("🛠️ AI decided to call tools:", responseMessage.tool_calls.map(t => t.function.name));
+                messages.push(responseMessage); // append assistant's tool call request
+
+                for (const toolCall of responseMessage.tool_calls) {
+                    const toolResult = await executeAiTool(toolCall, {
+                        tenantId: envContext.tenantId,
+                        clientId: envContext.clientId,
+                        clientName: envContext.clientName,
+                        services: services
+                    });
+
+                    messages.push({
+                        tool_call_id: toolCall.id,
+                        role: "tool",
+                        name: toolCall.function.name,
+                        content: toolResult,
+                    } as any);
+                }
+
+                response = await openai.chat.completions.create({
+                    model: AI_MODEL,
+                    messages,
+                    temperature: 0.7,
+                    max_tokens: 500
+                });
+            }
+
             return response.choices[0].message.content?.trim() || 'Lo siento, tuve un problema al procesar tu mensaje.';
+
         } catch (error) {
             console.error('Error in generateResponse:', error);
             throw error;

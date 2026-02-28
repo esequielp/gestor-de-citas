@@ -51,6 +51,9 @@ async function startServer() {
   app.use('/api', apiLimiter);
 
   // Body size limit to prevent DoS
+  // Higher limit for media upload endpoint (base64 files up to 16MB = ~21MB base64)
+  app.use('/api/whatsapp/upload-media', express.json({ limit: '25mb' }));
+  // Default limit for all other routes
   app.use(express.json({ limit: '1mb' }));
 
   console.log('🛣️ Setting up API routes...');

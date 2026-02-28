@@ -95,5 +95,7 @@ router.delete('/appointments/:id', requireTenant, appointmentController.deleteAp
 // Sesiones
 router.get('/appointments/:id/sessions', requireTenant, appointmentController.getSessions);
 router.put('/sessions/:sessionId', requireTenant, appointmentController.updateSession);
+router.post('/sessions/:sessionId/schedule', requireTenant, appointmentController.scheduleSession);
+router.post('/appointments/:id/rescue-sessions', requireTenant, appointmentController.rescueSessions);
 
 export default router;
