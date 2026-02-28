@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar as CalendarIcon, Users, MapPin, LogOut, Clock, X, Link as LinkIcon, Plus, Trash2, CheckCircle, Sparkles, Scissors, Edit2, DollarSign, Activity, ChevronLeft, ChevronRight, List, User, Phone, Mail, History, LayoutDashboard, TrendingUp, AlertCircle, CalendarClock, Settings, Bell, Zap, MessageCircle, MessageSquare, Send, Bot, Loader2, Globe, Search, Paperclip, Image, FileText, Mic, Download, Square } from 'lucide-react';
+import { Calendar as CalendarIcon, Users, MapPin, LogOut, Clock, X, Link as LinkIcon, Plus, Trash2, CheckCircle, Sparkles, Scissors, Edit2, DollarSign, Activity, ChevronLeft, ChevronRight, List, User, Phone, Mail, History, LayoutDashboard, TrendingUp, AlertCircle, CalendarClock, Settings, Bell, Zap, MessageCircle, MessageSquare, Send, Bot, Loader2, Globe, Search, Paperclip, Image, FileText, Mic, Download, Square, Menu } from 'lucide-react';
 import { dataService } from '../services/dataService';
 import apiClient from '../services/apiClient';
 import { Appointment, Branch, Employee, DaySchedule, TimeRange, Service, Client } from '../types';
@@ -170,6 +170,7 @@ const ReminderInputList = ({ label, value, onChange }: { label: string, value: s
 
 const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
     const [activeTab, setActiveTab] = useState<Tab>('DASHBOARD');
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [appointments, setAppointments] = useState<Appointment[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [branches, setBranches] = useState<Branch[]>([]);
@@ -198,6 +199,11 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
     const [calendarDate, setCalendarDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [selectedBranchId, setSelectedBranchId] = useState<string>('');
     const [settingsSubTab, setSettingsSubTab] = useState<SettingsSubTab>('PROFILE');
+
+    // List Search States
+    const [clientSearch, setClientSearch] = useState('');
+    const [employeeSearch, setEmployeeSearch] = useState('');
+    const [serviceSearch, setServiceSearch] = useState('');
 
     // Settings State
     const [businessProfile, setBusinessProfile] = useState({
@@ -641,9 +647,9 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
         });
 
         return (
-            <div className="h-[calc(100vh-130px)] flex animate-fade-in bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden text-gray-800">
+            <div className="h-full md:h-[calc(100vh-130px)] flex flex-col md:flex-row animate-fade-in bg-white md:rounded-2xl md:shadow-xl md:border md:border-gray-200 overflow-hidden text-gray-800">
                 {/* Sidebar (Chat List) */}
-                <div className="w-1/3 border-r border-gray-200 flex flex-col bg-slate-50 max-w-sm">
+                <div className={`border-r border-gray-200 flex flex-col bg-slate-50 ${selectedChat ? 'hidden md:flex md:w-1/3 md:max-w-sm' : 'w-full h-full'}`}>
                     <div className="p-5 border-b border-gray-200 bg-white">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-xl font-bold flex items-center gap-2">
@@ -732,19 +738,25 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                 </div>
 
                 {/* Main Chat Area */}
-                <div className="flex-1 flex flex-col bg-[#F8F9FB] relative">
+                <div className={`flex-col bg-[#F8F9FB] relative ${selectedChat ? 'flex flex-1 w-full h-full' : 'hidden md:flex md:flex-1'}`}>
                     {selectedChat ? (
                         <>
-                            <div className="px-6 py-4 bg-white border-b border-gray-200 flex items-center justify-between shadow-sm z-10">
+                            <div className="px-4 py-4 bg-white border-b border-gray-200 flex items-center justify-between shadow-sm z-10">
                                 <div className="flex items-center">
-                                    <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-bold mr-3">
+                                    <button
+                                        className="md:hidden mr-3 p-2 text-gray-500 hover:text-indigo-600 bg-gray-50 hover:bg-gray-100 rounded-full transition-colors"
+                                        onClick={() => setSelectedChat(null)}
+                                    >
+                                        <X size={20} />
+                                    </button>
+                                    <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-bold mr-3 shrink-0">
                                         {(selectedChat.nombre || 'U').charAt(0).toUpperCase()}
                                     </div>
-                                    <div>
-                                        <h4 className="font-bold text-gray-900">{selectedChat.nombre}</h4>
-                                        <div className="flex gap-3 text-[10px] text-gray-400">
+                                    <div className="flex flex-col overflow-hidden">
+                                        <h4 className="font-bold text-gray-900 truncate">{selectedChat.nombre}</h4>
+                                        <div className="flex gap-2 text-[10px] text-gray-400 mt-0.5 overflow-x-auto whitespace-nowrap scrollbar-hide">
                                             {selectedChat.telefono && <span className="flex items-center gap-1"><Phone size={10} /> {selectedChat.telefono}</span>}
-                                            <span className={`px-2 py-0.5 rounded-full font-bold uppercase ${getViaLabel(selectedChat.via).color}`}>
+                                            <span className={`px-2 py-0.5 rounded-full font-bold uppercase shrink-0 ${getViaLabel(selectedChat.via).color}`}>
                                                 {getViaLabel(selectedChat.via).label}
                                             </span>
                                         </div>
@@ -1276,47 +1288,69 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
     // --- Renderers ---
 
     const renderSidebar = () => (
-        <div className="w-64 bg-slate-900 text-white min-h-screen flex flex-col hidden md:flex sticky top-0 h-screen">
-            <div className="p-6 border-b border-slate-800">
-                <h2 className="text-xl font-bold tracking-tight">GestorCitas Admin</h2>
-            </div>
-            <nav className="flex-1 p-4 space-y-2">
-                {[
-                    { id: 'DASHBOARD', icon: LayoutDashboard, label: 'Resumen' },
-                    { id: 'APPOINTMENTS', icon: CalendarIcon, label: 'Citas' },
-                    { id: 'CLIENTS', icon: Users, label: 'Clientes' },
-                    { id: 'SERVICES', icon: Scissors, label: 'Servicios' },
-                    { id: 'EMPLOYEES', icon: User, label: 'Empleados' },
-                    { id: 'BRANCHES', icon: MapPin, label: 'Sucursales' },
-                    { id: 'MESSAGES', icon: MessageSquare, label: 'Mensajes', badge: unreadMsgCount },
-                    { id: 'SETTINGS', icon: Settings, label: 'Configuración' }
-                ].map((item: any) => (
-                    <button
-                        key={item.id}
-                        onClick={() => setActiveTab(item.id as Tab)}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === item.id ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
-                    >
-                        <item.icon size={18} />
-                        <span className="flex-1 text-left">{item.label}</span>
-                        {item.badge > 0 && (
-                            <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">{item.badge}</span>
-                        )}
+        <>
+            {/* Mobile Sidebar Overlay */}
+            {isMobileMenuOpen && (
+                <div
+                    className="md:hidden fixed inset-0 bg-black/50 z-40 backdrop-blur-sm"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                />
+            )}
+
+            <div className={`
+                fixed md:static inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white min-h-screen flex flex-col h-screen
+                transform transition-transform duration-300 ease-in-out
+                ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+            `}>
+                <div className="p-6 border-b border-slate-800 flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                        {businessProfile?.logoUrl ? (
+                            <img src={businessProfile.logoUrl} alt="Logo" className="h-8 w-auto rounded object-contain" />
+                        ) : null}
+                        <h2 className="text-xl font-bold tracking-tight">GestorCitas Admin</h2>
+                    </div>
+                    <button className="md:hidden" onClick={() => setIsMobileMenuOpen(false)}>
+                        <X size={24} className="text-gray-400 hover:text-white" />
                     </button>
-                ))}
-            </nav>
-            <div className="p-4 border-t border-slate-800 space-y-4">
-                <button onClick={() => {
-                    const baseUrl = window.location.origin + window.location.pathname;
-                    const directLink = `${baseUrl}?view=booking`;
-                    navigator.clipboard.writeText(directLink).then(() => showToast('Enlace copiado al portapapeles', 'success')).catch(() => showToast('Enlace: ' + directLink, 'info'));
-                }} className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-white py-2 rounded-lg text-sm transition-colors border border-slate-700">
-                    <LinkIcon size={14} /> Copiar Enlace Citas
-                </button>
-                <button onClick={onLogout} className="flex items-center gap-2 text-slate-400 hover:text-white text-sm">
-                    <LogOut size={16} /> Cerrar Sesión
-                </button>
+                </div>
+                <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+                    {[
+                        { id: 'DASHBOARD', icon: LayoutDashboard, label: 'Resumen' },
+                        { id: 'APPOINTMENTS', icon: CalendarIcon, label: 'Citas' },
+                        { id: 'CLIENTS', icon: Users, label: 'Clientes' },
+                        { id: 'SERVICES', icon: Scissors, label: 'Servicios' },
+                        { id: 'EMPLOYEES', icon: User, label: 'Empleados' },
+                        { id: 'BRANCHES', icon: MapPin, label: 'Sucursales' },
+                        { id: 'MESSAGES', icon: MessageSquare, label: 'Mensajes', badge: unreadMsgCount },
+                        { id: 'SETTINGS', icon: Settings, label: 'Configuración' }
+                    ].map((item: any) => (
+                        <button
+                            key={item.id}
+                            onClick={() => { setActiveTab(item.id as Tab); setIsMobileMenuOpen(false); }}
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === item.id ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+                        >
+                            <item.icon size={18} />
+                            <span className="flex-1 text-left">{item.label}</span>
+                            {item.badge > 0 && (
+                                <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">{item.badge}</span>
+                            )}
+                        </button>
+                    ))}
+                </nav>
+                <div className="p-4 border-t border-slate-800 space-y-4">
+                    <button onClick={() => {
+                        const baseUrl = window.location.origin + window.location.pathname;
+                        const directLink = `${baseUrl}?view=booking`;
+                        navigator.clipboard.writeText(directLink).then(() => showToast('Enlace copiado al portapapeles', 'success')).catch(() => showToast('Enlace: ' + directLink, 'info'));
+                    }} className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-white py-2 rounded-lg text-sm transition-colors border border-slate-700">
+                        <LinkIcon size={14} /> Copiar Enlace Citas
+                    </button>
+                    <button onClick={onLogout} className="flex items-center gap-2 text-slate-400 hover:text-white text-sm">
+                        <LogOut size={16} /> Cerrar Sesión
+                    </button>
+                </div>
             </div>
-        </div>
+        </>
     );
 
     const renderOverview = () => {
@@ -2054,11 +2088,23 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
 
     const renderClients = () => (
         <div className="space-y-6 animate-fade-in">
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center sm:flex-row flex-col gap-4">
                 <h2 className="text-2xl font-bold text-gray-800">Directorio de Clientes</h2>
-                <Button size="sm" onClick={() => setEditingClient({ name: '', phone: '', email: '' })}>
-                    <Plus size={16} className="mr-2" /> Nueva Cliente
-                </Button>
+                <div className="flex gap-2 w-full sm:w-auto">
+                    <div className="relative flex-1 sm:w-64">
+                        <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                        <input
+                            type="text"
+                            placeholder="Buscar cliente..."
+                            value={clientSearch}
+                            onChange={(e) => setClientSearch(e.target.value)}
+                            className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                        />
+                    </div>
+                    <Button size="sm" onClick={() => setEditingClient({ name: '', phone: '', email: '' })} className="whitespace-nowrap">
+                        <Plus size={16} className="mr-1 sm:mr-2" /> <span className="hidden sm:inline">Nueva Cliente</span>
+                    </Button>
+                </div>
             </div>
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div className="overflow-x-auto">
@@ -2073,7 +2119,7 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                            {clients.map(client => (
+                            {clients.filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.email && c.email.toLowerCase().includes(clientSearch.toLowerCase()))).map(client => (
                                 <tr key={client.id} className="hover:bg-gray-50">
                                     <td className="px-6 py-4 font-medium text-gray-900 flex items-center gap-3">
                                         <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold">
@@ -2248,21 +2294,33 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
 
     const renderServices = () => (
         <div className="space-y-6 animate-fade-in">
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center sm:flex-row flex-col gap-4">
                 <h2 className="text-2xl font-bold text-gray-800">Catálogo de Servicios</h2>
-                <Button size="sm" onClick={() => setEditingService({
-                    name: '',
-                    description: '',
-                    duration: 30,
-                    price: 0,
-                    active: true,
-                    sesiones_totales: 1
-                })}>
-                    <Plus size={16} className="mr-2" /> Nuevo Servicio
-                </Button>
+                <div className="flex gap-2 w-full sm:w-auto">
+                    <div className="relative flex-1 sm:w-64">
+                        <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                        <input
+                            type="text"
+                            placeholder="Buscar servicio..."
+                            value={serviceSearch}
+                            onChange={(e) => setServiceSearch(e.target.value)}
+                            className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                        />
+                    </div>
+                    <Button size="sm" onClick={() => setEditingService({
+                        name: '',
+                        description: '',
+                        duration: 30,
+                        price: 0,
+                        active: true,
+                        sesiones_totales: 1
+                    })} className="whitespace-nowrap">
+                        <Plus size={16} className="mr-1 sm:mr-2" /> <span className="hidden sm:inline">Nuevo Servicio</span>
+                    </Button>
+                </div>
             </div>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {services.map(srv => (
+                {services.filter(srv => srv.name.toLowerCase().includes(serviceSearch.toLowerCase())).map(srv => (
                     <div key={srv.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-all flex flex-col h-full">
                         <div className="flex justify-between items-start mb-4">
                             <div className="p-3 bg-indigo-50 rounded-lg text-indigo-600">
@@ -2311,23 +2369,37 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
 
     const renderEmployees = () => (
         <div className="space-y-6 animate-fade-in">
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center sm:flex-row flex-col gap-4">
                 <h2 className="text-2xl font-bold text-gray-800">Gestionar Empleados</h2>
-                <Button size="sm" onClick={() => {
-                    const defaultSchedule: DaySchedule[] = [];
-                    for (let i = 0; i < 7; i++) {
-                        const isWorkDay = i !== 0 && i !== 6;
-                        defaultSchedule.push({ dayOfWeek: i, isWorkDay, ranges: isWorkDay ? [{ start: 9, end: 17 }] : [] });
-                    }
-                    setEditingEmployeeProfile({
-                        name: '', role: 'Estilista', branchId: branches[0]?.id || '',
-                        avatar: `https://picsum.photos/100/100?random=${Math.floor(Math.random() * 1000)}`,
-                        weeklySchedule: defaultSchedule, serviceIds: []
-                    });
-                }}><Plus size={16} className="mr-2" /> Nuevo Empleado</Button>
+                <div className="flex gap-2 w-full sm:w-auto">
+                    <div className="relative flex-1 sm:w-64">
+                        <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                        <input
+                            type="text"
+                            placeholder="Buscar empleado..."
+                            value={employeeSearch}
+                            onChange={(e) => setEmployeeSearch(e.target.value)}
+                            className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                        />
+                    </div>
+                    <Button size="sm" onClick={() => {
+                        const defaultSchedule: DaySchedule[] = [];
+                        for (let i = 0; i < 7; i++) {
+                            const isWorkDay = i !== 0 && i !== 6;
+                            defaultSchedule.push({ dayOfWeek: i, isWorkDay, ranges: isWorkDay ? [{ start: 9, end: 17 }] : [] });
+                        }
+                        setEditingEmployeeProfile({
+                            name: '', role: 'Estilista', branchId: branches[0]?.id || '',
+                            avatar: `https://picsum.photos/100/100?random=${Math.floor(Math.random() * 1000)}`,
+                            weeklySchedule: defaultSchedule, serviceIds: []
+                        });
+                    }} className="whitespace-nowrap">
+                        <Plus size={16} className="mr-1 sm:mr-2" /> <span className="hidden sm:inline">Nuevo Empleado</span>
+                    </Button>
+                </div>
             </div>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {employees.map(emp => {
+                {employees.filter(emp => emp.name.toLowerCase().includes(employeeSearch.toLowerCase())).map(emp => {
                     const branch = branches.find(b => b.id === emp.branchId);
                     return (
                         <div key={emp.id} className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow relative group">
@@ -2554,11 +2626,34 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
         )
     };
 
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, callback: (url: string) => void) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (file.size > 5 * 1024 * 1024) {
+            showToast('La imagen es demasiado grande (máx. 5MB)', 'error');
+            return;
+        }
+        showToast('Subiendo imagen...', 'info');
+        const reader = new FileReader();
+        reader.onload = async () => {
+            try {
+                const result = reader.result as string;
+                const base64 = result.split(',')[1];
+                const uploadResult = await dataService.uploadMedia(base64, file.name, file.type);
+                callback(uploadResult.url);
+                showToast('Imagen subida correctamente', 'success');
+            } catch (err) {
+                showToast('Error al subir imagen', 'error');
+            }
+        };
+        reader.readAsDataURL(file);
+    };
+
     const renderEmployeeProfileModal = () => {
         if (!editingEmployeeProfile) return null;
         return (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-                <div className="bg-white rounded-xl p-6 max-w-md w-full space-y-4">
+                <div className="bg-white rounded-xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto space-y-4">
                     <h3 className="font-bold text-xl mb-2">{editingEmployeeProfile.id ? 'Editar Empleado' : 'Nuevo Empleado'}</h3>
 
                     <div>
@@ -2582,7 +2677,7 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                     <div>
                         <label className="block text-xs font-medium text-gray-500 mb-1">Sucursal Base</label>
                         <select
-                            className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                            className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-white appearance-none"
                             value={editingEmployeeProfile.branchId}
                             onChange={e => setEditingEmployeeProfile({ ...editingEmployeeProfile, branchId: e.target.value })}
                         >
@@ -2592,12 +2687,29 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                     </div>
 
                     <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Avatar URL</label>
-                        <input
-                            className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                            value={editingEmployeeProfile.avatar}
-                            onChange={e => setEditingEmployeeProfile({ ...editingEmployeeProfile, avatar: e.target.value })}
-                        />
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Foto del Profesional (Avatar)</label>
+                        <div className="flex items-center gap-4 mt-1">
+                            {editingEmployeeProfile.avatar && editingEmployeeProfile.avatar !== 'https://via.placeholder.com/100' ? (
+                                <img src={editingEmployeeProfile.avatar} alt="Avatar" className="w-16 h-16 rounded-full object-cover border border-gray-200" />
+                            ) : (
+                                <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center text-gray-400">
+                                    <User size={24} />
+                                </div>
+                            )}
+                            <input
+                                type="file"
+                                id="avatar-upload"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => handleImageUpload(e, url => setEditingEmployeeProfile({ ...editingEmployeeProfile, avatar: url }))}
+                            />
+                            <button
+                                onClick={() => document.getElementById('avatar-upload')?.click()}
+                                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                            >
+                                Cambiar foto
+                            </button>
+                        </div>
                     </div>
 
                     <div className="flex justify-end gap-2 pt-4">
@@ -2984,13 +3096,25 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium text-gray-500 mb-1">Imagen URL</label>
-                                    <input
-                                        placeholder="https://..."
-                                        value={editingBranch.image}
-                                        onChange={e => setEditingBranch({ ...editingBranch, image: e.target.value })}
-                                        className="w-full border p-2 rounded bg-white text-gray-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                                    />
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Foto de la Sucursal</label>
+                                    <div className="flex items-center gap-3">
+                                        {editingBranch.image && (
+                                            <img src={editingBranch.image} alt="Sucursal" className="w-12 h-12 rounded object-cover border border-gray-200 shrink-0" />
+                                        )}
+                                        <input
+                                            type="file"
+                                            id="branch-img-upload"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => handleImageUpload(e, url => setEditingBranch({ ...editingBranch, image: url }))}
+                                        />
+                                        <button
+                                            onClick={() => document.getElementById('branch-img-upload')?.click()}
+                                            className="px-3 py-1.5 border border-indigo-200 bg-indigo-50 rounded-lg text-sm text-indigo-700 hover:bg-indigo-100 transition-colors w-full break-normal"
+                                        >
+                                            {editingBranch.image ? 'Cambiar imagen' : 'Subir foto'}
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-2">
@@ -3077,7 +3201,7 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
         if (!editingService) return null;
         return (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-                <div className="bg-white rounded-lg p-6 max-w-md w-full space-y-4">
+                <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-[90vh] overflow-y-auto space-y-4">
                     <h3 className="font-bold">Servicio</h3>
                     <input placeholder="Nombre" value={editingService.name} onChange={e => setEditingService({ ...editingService, name: e.target.value })} className="w-full border p-2 rounded bg-white text-gray-900" />
                     <textarea placeholder="Descripción" value={editingService.description} onChange={e => setEditingService({ ...editingService, description: e.target.value })} className="w-full border p-2 rounded bg-white text-gray-900" />
@@ -3085,6 +3209,27 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                         <input type="number" placeholder="Duración (min)" value={editingService.duration} onChange={e => setEditingService({ ...editingService, duration: Number(e.target.value) })} className="w-full border p-2 rounded bg-white text-gray-900" title="Duración en minutos" />
                         <input type="number" placeholder="Precio" value={editingService.price} onChange={e => setEditingService({ ...editingService, price: Number(e.target.value) })} className="w-full border p-2 rounded bg-white text-gray-900" title="Precio del servicio" />
                         <input type="number" placeholder="Sesiones (Ej. 1)" value={editingService.sesiones_totales || 1} onChange={e => setEditingService({ ...editingService, sesiones_totales: Number(e.target.value) })} className="w-full border p-2 rounded bg-white text-gray-900" title="Número de sesiones" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1 mt-2">Imagen del Servicio</label>
+                        <div className="flex items-center gap-3">
+                            {editingService.image && (
+                                <img src={editingService.image} alt="Servicio" className="w-12 h-12 rounded object-cover border border-gray-200 shrink-0" />
+                            )}
+                            <input
+                                type="file"
+                                id="service-img-upload"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => handleImageUpload(e, url => setEditingService({ ...editingService, image: url }))}
+                            />
+                            <button
+                                onClick={() => document.getElementById('service-img-upload')?.click()}
+                                className="px-3 py-1.5 border border-indigo-200 bg-indigo-50 rounded-lg text-sm text-indigo-700 hover:bg-indigo-100 transition-colors w-full"
+                            >
+                                {editingService.image ? 'Cambiar imagen' : 'Subir imagen representativa'}
+                            </button>
+                        </div>
                     </div>
                     <div className="flex justify-end gap-2">
                         <Button variant="secondary" onClick={() => setEditingService(null)}>Cancelar</Button>
@@ -3105,22 +3250,20 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
         <div className="min-h-screen bg-gray-100 flex relative">
             {renderSidebar()}
 
-            <div className="md:hidden fixed top-0 w-full bg-slate-900 text-white p-4 z-20 flex justify-between items-center">
-                <span className="font-bold">Admin Panel</span>
+            <div className="md:hidden fixed top-0 w-full bg-slate-900 text-white p-4 z-20 flex justify-between items-center shadow-md">
+                <div className="flex items-center gap-3">
+                    <button onClick={() => setIsMobileMenuOpen(true)}>
+                        <Menu size={24} />
+                    </button>
+                    {businessProfile?.logoUrl ? (
+                        <img src={businessProfile.logoUrl} alt="Logo" className="h-8 w-auto rounded object-contain" />
+                    ) : null}
+                    <span className="font-bold">Admin Panel</span>
+                </div>
                 <button onClick={onLogout}><LogOut size={20} /></button>
             </div>
 
-            <main className="flex-1 p-4 md:p-8 mt-14 md:mt-0 overflow-y-auto h-screen">
-                <div className="md:hidden flex gap-2 mb-6 overflow-x-auto pb-2">
-                    <button onClick={() => setActiveTab('DASHBOARD')} className="px-4 py-2 rounded-full bg-white text-sm whitespace-nowrap">Resumen</button>
-                    <button onClick={() => setActiveTab('APPOINTMENTS')} className="px-4 py-2 rounded-full bg-white text-sm whitespace-nowrap">Citas</button>
-                    <button onClick={() => setActiveTab('CLIENTS')} className="px-4 py-2 rounded-full bg-white text-sm whitespace-nowrap">Clientes</button>
-                    <button onClick={() => setActiveTab('SERVICES')} className="px-4 py-2 rounded-full bg-white text-sm whitespace-nowrap">Servicios</button>
-                    <button onClick={() => setActiveTab('MESSAGES')} className="px-4 py-2 rounded-full bg-white text-sm whitespace-nowrap relative">
-                        Mensajes {unreadMsgCount > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full px-1">{unreadMsgCount}</span>}
-                    </button>
-                    <button onClick={() => setActiveTab('SETTINGS')} className="px-4 py-2 rounded-full bg-white text-sm whitespace-nowrap">Config</button>
-                </div>
+            <main className={`flex-1 mt-14 md:mt-0 ${activeTab === 'MESSAGES' ? 'p-0 h-[calc(100vh-56px)] md:h-[100vh] md:p-8 overflow-hidden md:overflow-y-auto' : 'p-4 md:p-8 overflow-y-auto h-[calc(100vh-56px)] md:h-screen'}`}>
 
                 {activeTab === 'DASHBOARD' && renderOverview()}
                 {activeTab === 'APPOINTMENTS' && renderAppointments()}

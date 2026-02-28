@@ -95,7 +95,7 @@ export async function executeAiTool(toolCall: any, context: AiContext): Promise<
 
                 return JSON.stringify({
                     message: "Horarios disponibles encontrados.",
-                    slots_disponibles: slots.map(s => s.timeString12h)
+                    slots_disponibles: slots.map(s => s.timeString)
                 });
             } catch (error: any) {
                 return JSON.stringify({ error: error.message });

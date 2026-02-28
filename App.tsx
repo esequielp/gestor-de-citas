@@ -103,7 +103,7 @@ const App: React.FC = () => {
   return (
     <>
       {renderView()}
-      <ChatWidget />
+      {view !== 'ADMIN_DASHBOARD' && view !== 'ADMIN_LOGIN' && <ChatWidget />}
     </>
   );
 };

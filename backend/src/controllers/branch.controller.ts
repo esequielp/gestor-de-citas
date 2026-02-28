@@ -111,16 +111,22 @@ export const branchController = {
         .eq('sucursal_id', id);
 
       if (error) throw error;
-      res.json((data || []).map(e => ({
-        ...e,
-        name: e.nombre,
-        branchId: e.sucursal_id,
-        role: e.role || 'Staff',
-        avatar: e.avatar_url || '',
-        avatarUrl: e.avatar_url || '',
-        serviceIds: e.service_ids || [],
-        weeklySchedule: e.weekly_schedule || []
-      })));
+      res.json((data || []).map(e => {
+        let sIds = e.service_ids;
+        if (typeof sIds === 'string') {
+          try { sIds = JSON.parse(sIds); } catch (err) { sIds = []; }
+        }
+        return {
+          ...e,
+          name: e.nombre,
+          branchId: e.sucursal_id,
+          role: e.role || 'Staff',
+          avatar: e.avatar_url || '',
+          avatarUrl: e.avatar_url || '',
+          serviceIds: Array.isArray(sIds) ? sIds : [],
+          weeklySchedule: e.weekly_schedule || []
+        };
+      }));
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import 'dotenv/config';
 import { aiToolsDefinition, executeAiTool } from './ai.tools';
 
-const AI_MODEL = 'gpt-4o-mini';
+const AI_MODEL = 'gpt-5-mini';
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
@@ -59,9 +59,7 @@ export const aiService = {
                         role: 'user',
                         content: `Escribe una descripción comercial y muy atractiva para el servicio: "${serviceName}".\n\nDescripción o contexto original: ${description || 'N/A'}\n\nREGLAS:\n1. Ve directo al grano.\n2. No incluyas textos introductorios como "Esta es tu descripción".\n3. Máximo 4 oraciones.\n4. Si el contexto original está vacío, crea una descripción estándar excelente para el servicio nombrado.`
                     }
-                ],
-                temperature: 0.7,
-                max_tokens: 200,
+                ]
             });
 
             return response.choices[0].message.content?.trim() || description;
@@ -141,9 +139,7 @@ IMPORTANTE: Responde SOLO con el JSON, sin texto adicional ni backticks.`
                         role: 'user',
                         content: userMessage
                     }
-                ],
-                temperature: 0.3,
-                max_tokens: 200,
+                ]
             });
 
             let content = response.choices[0].message.content?.trim() || '';
@@ -298,17 +294,15 @@ TU OBJETIVO: Ayudar al cliente de forma amable y eficiente. Puedes responder pre
 ${catalogText}
 ${extraInstructions}
 
-REGLAS DE RESPUESTA:
-1. Mantén la personalidad asignada en todo momento.
-2. Si el cliente te saluda, salúdalo con calidez.
-3. Si pregunta por algo que no está en el catálogo o instrucciones, di que por el momento no tienes esa información pero que un humano lo revisará pronto.
-4. Intenta ser breve y directo.
-5. NO inventes servicios que no están en la lista.
-6. Habla siempre en español.
-7. IMPORTANTE: Para resaltar texto en negrita, usa un solo asterisco al principio y al final (ejemplo: *texto en negrita*), NO uses doble asterisco.
-8. IMPORTANTE: Siempre que menciones fechas, usa el formato dd/mm/YYYY (ejemplo: 27/02/2026). NUNCA uses el formato YYYY-MM-DD.
-9. Si el cliente envía una imagen, analízala y responde según lo que ves.
-10. Si el cliente envía un audio, ya fue transcrito para ti. Responde al contenido de la transcripción de forma natural, sin mencionar que fue un audio transcrito.`
+REGLAS DE RESPUESTA Y COMPORTAMIENTO:
+1. Mantén la personalidad asignada en todo momento, siendo natural y empático. No suenes robótico.
+2. Si el cliente te saluda, salúdalo con calidez y naturalidad.
+3. El cliente NO está interactuando con botones, sino escribiendo en chat libre. Interpreta sus respuestas (como "si", "dale", "me parece") de acuerdo al contexto de la conversación. No esperes respuestas exactas del catálogo.
+4. Para resaltar texto en negrita, usa un solo asterisco al principio y al final (ejemplo: *texto en negrita*), NO uses doble asterisco.
+5. FORMATO DE FECHAS: Cuando hables o escribas fechas al cliente, usa el formato dd/mm/YYYY o nombre del día (ejemplo: 27/02/2026, o "el próximo martes"). PERO al usar HERRAMIENTAS (tools) de disponibilidad o agenda, OBLIGATORIAMENTE debes usar el formato YYYY-MM-DD como lo piden las funciones.
+6. Sé preactivo con el agendamiento: Si el usuario muestra intención de agendar o ver horas para un servicio, usa INMEDIATAMENTE la herramienta "consultar_disponibilidad" para buscar opciones, sin forzarlo a elegir con frases redundantes. Recomiéndale un servicio y consúltalo de inmediato.
+7. Si el cliente envía una imagen, analízala y responde según lo que ves.
+8. Si el cliente envía un audio, ya fue transcrito para ti. Responde al contenido de la transcripción de forma natural, sin mencionar que fue un audio transcrito.`
                 },
                 ...history.slice(-6),
                 { role: 'user', content: userContent }
@@ -317,8 +311,6 @@ REGLAS DE RESPUESTA:
             let response = await openai.chat.completions.create({
                 model: AI_MODEL,
                 messages,
-                temperature: 0.7,
-                max_tokens: 500,
                 tools: envContext ? (aiToolsDefinition as any) : undefined,
                 tool_choice: envContext ? "auto" : "none",
             });
@@ -347,9 +339,7 @@ REGLAS DE RESPUESTA:
 
                 response = await openai.chat.completions.create({
                     model: AI_MODEL,
-                    messages,
-                    temperature: 0.7,
-                    max_tokens: 500
+                    messages
                 });
             }
 
