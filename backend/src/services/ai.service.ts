@@ -62,7 +62,9 @@ export const aiService = {
                 ]
             });
 
-            return response.choices[0].message.content?.trim() || description;
+            let improvedText = response.choices[0].message.content?.trim() || description;
+            improvedText = improvedText.replace(/^```(html|md|markdown)?\n?/i, '').replace(/```$/i, '').trim();
+            return improvedText;
         } catch (error) {
             console.error('Error improving description with AI:', error);
             throw error;

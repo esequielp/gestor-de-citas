@@ -260,6 +260,7 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
     const [isLoadingMessages, setIsLoadingMessages] = useState(false);
 
     // --- Modals State ---
+    const [isImprovingDescription, setIsImprovingDescription] = useState(false);
     const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
     const [tempSchedule, setTempSchedule] = useState<DaySchedule[]>([]);
     const [selectedDayId, setSelectedDayId] = useState<number>(1);
@@ -3208,6 +3209,7 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                 showToast('Ingresa primero el nombre del servicio', 'error');
                 return;
             }
+            setIsImprovingDescription(true);
             showToast('Mejorando la descripción con IA...', 'info');
             try {
                 const improved = await dataService.improveServiceDescription(editingService.name, editingService.description || '');
@@ -3215,13 +3217,15 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                 showToast('¡Descripción mejorada!', 'success');
             } catch (error) {
                 showToast('Error al mejorar descripción', 'error');
+            } finally {
+                setIsImprovingDescription(false);
             }
         };
 
         const renderQuill = () => {
             return (
-                <div className="bg-white rounded border border-gray-300">
-                    <ReactQuill theme="snow" value={editingService.description || ''} onChange={(desc: string) => setEditingService({ ...editingService, description: desc })} placeholder="Escribe tu texto publicitario aquí..." />
+                <div className={`bg-white rounded border border-gray-300 ${isImprovingDescription ? 'opacity-50 pointer-events-none' : ''}`}>
+                    <ReactQuill theme="snow" value={editingService.description || ''} onChange={(desc: string) => setEditingService({ ...editingService, description: desc })} placeholder="Escribe tu texto publicitario aquí..." readOnly={isImprovingDescription} />
                 </div>
             );
         };
@@ -3238,8 +3242,8 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                     <div>
                         <div className="flex justify-between items-end mb-2">
                             <label className="block text-sm font-medium text-gray-700">Landing Page Copy / Detalles</label>
-                            <button onClick={handleImproveDescription} className="flex items-center gap-1 text-xs text-indigo-600 font-semibold bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-full hover:bg-indigo-100 transition-colors">
-                                <Sparkles size={14} /> Mejorar Copy con IA
+                            <button onClick={handleImproveDescription} disabled={isImprovingDescription} className="flex items-center gap-1 text-xs text-indigo-600 font-semibold bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-full hover:bg-indigo-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                {isImprovingDescription ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} {isImprovingDescription ? 'Generando...' : 'Mejorar Copy con IA'}
                             </button>
                         </div>
                         {renderQuill()}

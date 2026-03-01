@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, X, Instagram, Facebook, Twitter, MapPin, Phone, Mail, Clock, Calendar, Star, ArrowRight, Scissors, ChevronRight } from 'lucide-react';
+import { Menu, X, Instagram, Facebook, Twitter, MapPin, Phone, Mail, Clock, Calendar, Star, ArrowRight, Scissors, ChevronRight, Sparkles } from 'lucide-react';
 import { Button } from '../components/Button';
 import { dataService } from '../services/dataService';
 import { Service, Branch, ViewState } from '../types';
