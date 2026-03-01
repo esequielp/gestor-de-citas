@@ -10,6 +10,7 @@ import reminderRoutes from './reminder.routes.js';
 import widgetRoutes from './widget.routes.js';
 import whatsappRoutes from './whatsapp.routes.js';
 import exceptionRoutes from './exception.routes.js';
+import testimonialRoutes from './testimonial.routes.js';
 
 const router = Router();
 
@@ -37,5 +38,8 @@ router.use('/whatsapp', whatsappRoutes);
 
 // Employee Exceptions (vacaciones, horarios especiales)
 router.use('/exceptions', exceptionRoutes);
+
+// Testimonials
+router.use('/testimonials', testimonialRoutes);
 
 export default router;

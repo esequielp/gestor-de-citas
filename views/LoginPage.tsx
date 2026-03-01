@@ -8,8 +8,10 @@ const supabase = createClient(
     import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 );
 
+import { ViewState } from '../types';
+
 interface LoginPageProps {
-    onSuccess: () => void;
+    onSuccess: (view?: ViewState) => void;
     onBack: () => void;
 }
 
@@ -24,6 +26,31 @@ const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBack }) => {
     const [error, setError] = useState('');
     const [checkingSession, setCheckingSession] = useState(true);
 
+    const evaluateUserRoleAndRoute = async (email: string) => {
+        try {
+            await resolveTenant(email);
+
+            // Fetch employees and clients to see what role they have
+            const employees = await dataService.getEmployees();
+            if (employees.some(e => e.email?.toLowerCase() === email.toLowerCase())) {
+                onSuccess('EMPLOYEE_DASHBOARD');
+                return;
+            }
+
+            const clients = await dataService.getClients();
+            // If they are explicitly marked as clients (no admin override)
+            if (clients.some(c => c.email.toLowerCase() === email.toLowerCase()) && !email.includes('admin')) {
+                onSuccess('CLIENT_PROFILE');
+                return;
+            }
+
+            // Default
+            onSuccess('ADMIN_DASHBOARD');
+        } catch (e) {
+            onSuccess('ADMIN_DASHBOARD');
+        }
+    };
+
     // Check if coming back from Google OAuth redirect
     useEffect(() => {
         const checkSession = async () => {
@@ -32,9 +59,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBack }) => {
                 if (session) {
                     // Store token for API calls
                     localStorage.setItem('token', session.access_token);
-                    // Resolve tenant from user metadata or email domain
-                    await resolveTenant(session.user.email || '');
-                    onSuccess();
+                    await evaluateUserRoleAndRoute(session.user.email || '');
                     return;
                 }
             } catch (e) {
@@ -49,8 +74,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBack }) => {
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
             if (event === 'SIGNED_IN' && session) {
                 localStorage.setItem('token', session.access_token);
-                await resolveTenant(session.user.email || '');
-                onSuccess();
+                await evaluateUserRoleAndRoute(session.user.email || '');
             }
         });
 
@@ -103,7 +127,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBack }) => {
 
                     // 3. Set Tenant Context
                     localStorage.setItem('tenantId', newCompany.id);
-                    onSuccess();
+                    await evaluateUserRoleAndRoute(email);
                     return;
                 } else {
                     setError('Se ha enviado un correo de confirmación. Por favor revisa tu bandeja de entrada.');
@@ -125,8 +149,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBack }) => {
                     // Resolve tenant from the user's assigned company logic or fallback domain check
                     // As a simple mapping for MVP, we get their empresa via /empresas/me utilizing X-Tenant-Id hack or user metadata:
                     // Usually we'd look up the user in a `usuarios` table. For MVP demo, if not vegano, we will just use vegano ID
-                    await resolveTenant(email);
-                    onSuccess();
+                    await evaluateUserRoleAndRoute(email);
                     return;
                 }
             } catch (e) {
@@ -136,7 +159,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBack }) => {
             // Demo fallback
             if ((email === 'admin' && password === 'admin') || (email === 'admin@vegano.co') || (password.length >= 4)) {
                 localStorage.setItem('tenantId', 'eb1a20ab-d82e-4d2c-ac34-64ecb0afb161');
-                onSuccess();
+                await evaluateUserRoleAndRoute(email);
             } else {
                 setError('Credenciales incorrectas. Usa admin@vegano.co o crea una cuenta nueva.');
             }

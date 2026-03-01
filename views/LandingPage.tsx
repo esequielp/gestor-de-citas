@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, X, Instagram, Facebook, Twitter, MapPin, Phone, Mail, Clock, Calendar, Star, ArrowRight, Scissors, ChevronRight, Sparkles } from 'lucide-react';
+import { Menu, X, Instagram, Facebook, Twitter, MapPin, Phone, Mail, Clock, Calendar, Star, ArrowRight, Scissors, ChevronRight, Sparkles, User } from 'lucide-react';
 import { Button } from '../components/Button';
 import { dataService } from '../services/dataService';
 import { Service, Branch, ViewState } from '../types';
@@ -27,15 +27,18 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
   const [services, setServices] = useState<Service[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [company, setCompany] = useState<any>(null);
+  const [testimonials, setTestimonials] = useState<any[]>([]);
+  const [activeTestimonialIndex, setActiveTestimonialIndex] = useState(0);
   const [contactStatus, setContactStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [allServices, allBranches, companyInfo] = await Promise.all([
+        const [allServices, allBranches, companyInfo, dbTestimonials] = await Promise.all([
           dataService.getServices(),
           dataService.getBranches(),
-          dataService.getCompanyInfo()
+          dataService.getCompanyInfo(),
+          dataService.getTestimonials()
         ]);
 
         if (Array.isArray(allServices)) {
@@ -46,12 +49,41 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
           setBranches(allBranches);
         }
         setCompany(companyInfo);
+
+        // Add DB testimonials or use static ones as fallback
+        if (Array.isArray(dbTestimonials) && dbTestimonials.length > 0) {
+          setTestimonials(dbTestimonials);
+        } else {
+          setTestimonials([
+            { id: "1", text: "Los resultados superaron mis expectativas. Desde el momento que haces la reserva hasta que terminas, te hacen sentir como realeza. Totalmente recomendado.", client_name: "María Camila R.", client_image: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&q=80" },
+            { id: "2", text: "El profesionalismo es de otro nivel. Las instalaciones, la atención, todo es premium. Me volví cliente fiel en la primera cita y el trato es inmejorable.", client_name: "Roberto Sánchez", client_image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&q=80" },
+            { id: "3", text: "Nunca había tenido una experiencia tan buena ni agendado tan fácil. Me orientaron perfectamente e incluso me recomendaron exactamente lo que necesitaba.", client_name: "Ana Orozco", client_image: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&q=80" }
+          ]);
+        }
       } catch (e) {
         console.error("Error loading landing data:", e);
       }
     };
     loadData();
   }, []);
+
+  // Auto-rotate testimonials every 5 seconds if there are more than 3
+  useEffect(() => {
+    if (testimonials.length <= 3) return;
+    const interval = setInterval(() => {
+      setActiveTestimonialIndex((prev) => (prev + 1) % testimonials.length);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [testimonials.length]);
+
+  const getVisibleTestimonials = () => {
+    if (testimonials.length <= 3) return testimonials;
+    const result = [];
+    for (let i = 0; i < 3; i++) {
+      result.push(testimonials[(activeTestimonialIndex + i) % testimonials.length]);
+    }
+    return result;
+  };
 
   const scrollTo = (id: string) => {
     setIsMenuOpen(false);
@@ -281,54 +313,25 @@ const LandingPage: React.FC<Props> = ({ onNavigate }) => {
             <p className="text-gray-500 max-w-2xl mx-auto">Experiencias reales de personas que ya dieron el paso hacia su mejor versión.</p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8 relative z-10">
-            {/* Testimonial 1 */}
-            <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 hover:shadow-xl transition-shadow relative">
-              <div className="text-6xl text-indigo-100 absolute top-4 right-6 font-serif leading-none">"</div>
-              <div className="flex items-center gap-2 mb-6">
-                {[1, 2, 3, 4, 5].map(i => <Star key={i} size={18} className="fill-yellow-400 text-yellow-400" />)}
-              </div>
-              <p className="text-gray-700 italic mb-6">"Los resultados superaron mis expectativas. Desde el momento que haces la reserva hasta que terminas, te hacen sentir como realeza. Totalmente recomendado."</p>
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 font-bold overflow-hidden"><img src="https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&q=80" alt="Avatar" /></div>
-                <div>
-                  <h4 className="font-bold text-gray-900">María Camila R.</h4>
-                  <p className="text-xs text-gray-500">Transformación Complete</p>
+          <div className="grid md:grid-cols-3 gap-8 relative z-10 transition-all duration-500 ease-in-out">
+            {getVisibleTestimonials().map((t, idx) => (
+              <div key={t.id || idx} className={`p-8 rounded-3xl shadow-sm transition-all duration-500 relative animate-fade-in ${idx % 2 !== 0 ? 'bg-indigo-600 shadow-lg transform md:-translate-y-4 scale-105' : 'bg-white border border-gray-100 hover:shadow-xl'}`}>
+                <div className={`text-6xl absolute top-4 right-6 font-serif leading-none ${idx % 2 !== 0 ? 'text-indigo-400' : 'text-indigo-100'}`}>"</div>
+                <div className="flex items-center gap-2 mb-6">
+                  {[1, 2, 3, 4, 5].map(i => <Star key={i} size={18} className="fill-yellow-400 text-yellow-400" />)}
+                </div>
+                <p className={`italic mb-6 text-sm ${idx % 2 !== 0 ? 'text-white' : 'text-gray-700'}`}>"{t.text}"</p>
+                <div className="flex items-center gap-4">
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold overflow-hidden shrink-0 ${idx % 2 !== 0 ? 'bg-white text-indigo-600' : 'bg-gray-200 text-gray-500'}`}>
+                    {t.client_image ? <img src={t.client_image} className="w-full h-full object-cover" alt="Avatar" /> : <User size={24} />}
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className={`font-bold truncate ${idx % 2 !== 0 ? 'text-white' : 'text-gray-900'}`}>{t.client_name}</h4>
+                    {t.rating && <p className={`text-xs ${idx % 2 !== 0 ? 'text-indigo-200' : 'text-gray-500'}`}>{t.rating} / 5</p>}
+                  </div>
                 </div>
               </div>
-            </div>
-
-            {/* Testimonial 2 */}
-            <div className="bg-indigo-600 p-8 rounded-3xl shadow-lg hover:shadow-xl transition-shadow relative transform md:-translate-y-4">
-              <div className="text-6xl text-indigo-400 absolute top-4 right-6 font-serif leading-none">"</div>
-              <div className="flex items-center gap-2 mb-6">
-                {[1, 2, 3, 4, 5].map(i => <Star key={i} size={18} className="fill-yellow-400 text-yellow-400" />)}
-              </div>
-              <p className="text-white italic mb-6">"El profesionalismo es de otro nivel. Las instalaciones, la atención, todo es premium. Me volví cliente fiel en la primera cita y el trato es inmejorable."</p>
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center text-indigo-600 font-bold overflow-hidden"><img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&q=80" alt="Avatar" /></div>
-                <div>
-                  <h4 className="font-bold text-white">Roberto Sánchez</h4>
-                  <p className="text-xs text-indigo-200">Experiencia Premium</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Testimonial 3 */}
-            <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 hover:shadow-xl transition-shadow relative">
-              <div className="text-6xl text-indigo-100 absolute top-4 right-6 font-serif leading-none">"</div>
-              <div className="flex items-center gap-2 mb-6">
-                {[1, 2, 3, 4, 5].map(i => <Star key={i} size={18} className="fill-yellow-400 text-yellow-400" />)}
-              </div>
-              <p className="text-gray-700 italic mb-6">"Nunca había tenido una experiencia tan buena ni agendado tan fácil. Me orientaron perfectamente e incluso me recomendaron exactamente lo que necesitaba."</p>
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 font-bold overflow-hidden"><img src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&q=80" alt="Avatar" /></div>
-                <div>
-                  <h4 className="font-bold text-gray-900">Ana Orozco</h4>
-                  <p className="text-xs text-gray-500">Renovación de Look</p>
-                </div>
-              </div>
-            </div>
+            ))}
           </div>
 
           <div className="mt-16 text-center">

@@ -408,11 +408,9 @@ export const appointmentService = {
   },
 
   async updateSession(tenantId: string, sessionId: string, data: any) {
-    // Para simplificar, asumimos que si llegamos aquí es porque el middleware validó el tenant.
-    // Pero por seguridad validamos la cita dueña de la sesión.
     const { data: session } = await supabaseAdmin
       .from('sesiones')
-      .select('*, cita:citas(empresa_id)')
+      .select('*, cita:citas(empresa_id, cliente:clientes(nombre, email), servicio:servicios(nombre), empresa:empresas(nombre))')
       .eq('id', sessionId)
       .single();
 
@@ -432,6 +430,23 @@ export const appointmentService = {
       .single();
 
     if (error) throw new Error(error.message);
+
+    // Trigger testimonial email if session state changed to COMPLETADA
+    if (data.estado === 'COMPLETADA' && session.estado !== 'COMPLETADA') {
+      import('./email.service.js').then(({ emailService }) => {
+        // @ts-ignore
+        const { cliente, servicio, empresa } = session.cita;
+        if (cliente && cliente.email) {
+          emailService.sendTestimonialRequest({
+            email: cliente.email,
+            clientName: cliente.nombre || 'Cliente',
+            serviceName: servicio ? servicio.nombre : 'Servicio',
+            companyName: empresa ? empresa.nombre : 'AgendaPro'
+          });
+        }
+      }).catch(e => console.error('Error loading emailService for testimonials:', e));
+    }
+
     return result;
   },
 

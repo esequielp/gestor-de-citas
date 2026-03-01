@@ -42,6 +42,7 @@ export interface Employee {
   phone?: string;
   weeklySchedule: DaySchedule[];
   serviceIds: string[]; // Services this employee can perform
+  auth_user_id?: string;
 }
 
 export interface Client {
@@ -50,6 +51,7 @@ export interface Client {
   email: string;
   phone: string;
   createdAt: string;
+  auth_user_id?: string;
 }
 
 export interface Appointment {
@@ -65,4 +67,4 @@ export interface Appointment {
   createdAt: string;
 }
 
-export type ViewState = 'LANDING' | 'BOOKING' | 'ADMIN_LOGIN' | 'ADMIN_DASHBOARD' | 'B2B_LANDING' | 'CHAT_WIDGET_ONLY' | 'SERVICE_DETAILS';
+export type ViewState = 'LANDING' | 'BOOKING' | 'ADMIN_LOGIN' | 'ADMIN_DASHBOARD' | 'B2B_LANDING' | 'CHAT_WIDGET_ONLY' | 'SERVICE_DETAILS' | 'CLIENT_PROFILE' | 'EMPLOYEE_DASHBOARD';

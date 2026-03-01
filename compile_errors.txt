@@ -1,0 +1,77 @@
+App.tsx(97,13): error TS2322: Type '(targetView: ViewState) => void' is not assignable to type '(view?: ViewState | undefined) => void'.
+  Types of parameters 'targetView' and 'view' are incompatible.
+    Type 'ViewState | undefined' is not assignable to type 'ViewState'.
+      Type 'undefined' is not assignable to type 'ViewState'.
+backend/src/controllers/appointment.controller.ts(73,65): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+backend/src/controllers/appointment.controller.ts(84,49): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+backend/src/controllers/appointment.controller.ts(95,71): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+backend/src/controllers/appointment.controller.ts(106,72): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+backend/src/controllers/appointment.controller.ts(117,73): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+backend/src/controllers/appointment.controller.ts(133,72): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+backend/src/routes/settings.routes.ts(115,9): error TS6133: 'result' is declared but its value is never read.
+backend/src/routes/settings.routes.ts(268,13): error TS6133: 'data' is declared but its value is never read.
+backend/src/routes/tenant.routes.ts(11,24): error TS6133: 'req' is declared but its value is never read.
+backend/src/routes/whatsapp.routes.ts(227,57): error TS2339: Property 'ai_disabled' does not exist on type '{ id: any; empresa_id: any; nombre: any; }'.
+backend/src/routes/whatsapp.routes.ts(351,91): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+backend/src/routes/whatsapp.routes.ts(354,15): error TS6133: 'baseFilter' is declared but its value is never read.
+backend/src/routes/whatsapp.routes.ts(532,91): error TS2345: Argument of type 'string | string[]' is not assignable to parameter of type 'string'.
+  Type 'string[]' is not assignable to type 'string'.
+backend/src/routes/whatsapp.routes.ts(657,17): error TS2322: Type 'Buffer<ArrayBufferLike>' is not assignable to type 'Buffer<ArrayBuffer>'.
+  Type 'ArrayBufferLike' is not assignable to type 'ArrayBuffer'.
+    Type 'SharedArrayBuffer' is not assignable to type 'ArrayBuffer'.
+      Types of property '[Symbol.toStringTag]' are incompatible.
+        Type '"SharedArrayBuffer"' is not assignable to type '"ArrayBuffer"'.
+backend/src/routes/whatsapp.routes.ts(668,17): error TS6133: 'data' is declared but its value is never read.
+backend/src/scripts/migrate-exceptions.ts(25,17): error TS6133: 'data' is declared but its value is never read.
+backend/src/scripts/test-booking.ts(1,1): error TS6133: 'dataService' is declared but its value is never read.
+backend/src/scripts/test-booking.ts(1,29): error TS2307: Cannot find module '../../services/dataService' or its corresponding type declarations.
+backend/src/scripts/test-booking.ts(2,1): error TS6133: 'chatApiService' is declared but its value is never read.
+backend/src/scripts/test-booking.ts(2,32): error TS2307: Cannot find module '../../src/services/chatApiService' or its corresponding type declarations.
+backend/src/scripts/verify-create.ts(1,1): error TS6133: 'supabaseAdmin' is declared but its value is never read.
+backend/src/scripts/verify-create.ts(3,1): error TS6133: 'clientController' is declared but its value is never read.
+backend/src/scripts/verify-create.ts(3,34): error TS2307: Cannot find module '../controllers/client.controller' or its corresponding type declarations.
+backend/src/services/ai.service.ts(323,100): error TS2339: Property 'function' does not exist on type 'ChatCompletionMessageToolCall'.
+  Property 'function' does not exist on type 'ChatCompletionMessageCustomToolCall'.
+backend/src/services/ai.service.ts(337,40): error TS2339: Property 'function' does not exist on type 'ChatCompletionMessageToolCall'.
+  Property 'function' does not exist on type 'ChatCompletionMessageCustomToolCall'.
+backend/src/services/ai.tools.ts(123,21): error TS2353: Object literal may only specify known properties, and 'clientName' does not exist in type 'CreateAppointmentDTO'.
+backend/src/services/appointment.service.spec.ts(64,128): error TS2353: Object literal may only specify known properties, and 'clientName' does not exist in type 'CreateAppointmentDTO'.
+backend/src/services/appointment.service.ts(531,24): error TS6133: 'tenantId' is declared but its value is never read.
+backend/src/services/whatsapp.service.ts(275,27): error TS6133: 'uploadData' is declared but its value is never read.
+backend/src/utils/logger.ts(43,54): error TS6133: 'key' is declared but its value is never read.
+server.ts(64,27): error TS6133: 'req' is declared but its value is never read.
+src/components/chat/ChatWidget.tsx(2,42): error TS6133: 'Calendar' is declared but its value is never read.
+src/components/chat/ChatWidget.tsx(2,52): error TS6133: 'Clock' is declared but its value is never read.
+src/components/chat/ChatWidget.tsx(2,78): error TS6133: 'Loader2' is declared but its value is never read.
+src/components/chat/ChatWidget.tsx(226,23): error TS6133: 'result' is declared but its value is never read.
+src/services/chatApiService.ts(1,19): error TS6133: 'Branch' is declared but its value is never read.
+src/services/chatApiService.ts(1,27): error TS6133: 'Employee' is declared but its value is never read.
+utils/logger.ts(87,53): error TS6133: 'key' is declared but its value is never read.
+views/AdminDashboard.tsx(2,141): error TS6133: 'DollarSign' is declared but its value is never read.
+views/AdminDashboard.tsx(2,215): error TS6133: 'History' is declared but its value is never read.
+views/AdminDashboard.tsx(2,297): error TS6133: 'Zap' is declared but its value is never read.
+views/AdminDashboard.tsx(2,378): error TS6133: 'Image' is declared but its value is never read.
+views/AdminDashboard.tsx(2,410): error TS6133: 'Square' is declared but its value is never read.
+views/AdminDashboard.tsx(43,7): error TS6133: 'timeToMinutes' is declared but its value is never read.
+views/AdminDashboard.tsx(251,12): error TS6133: 'loadingSettings' is declared but its value is never read.
+views/AdminDashboard.tsx(1184,108): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+views/AdminDashboard.tsx(2894,45): error TS2322: Type '"xs"' is not assignable to type '"sm" | "md" | "lg" | undefined'.
+views/B2BLandingPage.tsx(2,19): error TS6133: 'CheckCircle' is declared but its value is never read.
+views/B2BLandingPage.tsx(2,79): error TS6133: 'ArrowRight' is declared but its value is never read.
+views/BookingWizard.tsx(2,39): error TS6133: 'User' is declared but its value is never read.
+views/BookingWizard.tsx(2,93): error TS6133: 'ExternalLink' is declared but its value is never read.
+views/BookingWizard.tsx(2,157): error TS6133: 'Star' is declared but its value is never read.
+views/BookingWizard.tsx(46,7): error TS6133: 'RecenterAutomatically' is declared but its value is never read.
+views/EmployeeDashboard.tsx(2,71): error TS6133: 'Search' is declared but its value is never read.
+views/EmployeeDashboard.tsx(133,56): error TS6133: 'i' is declared but its value is never read.
+views/LandingPage.tsx(2,77): error TS6133: 'Calendar' is declared but its value is never read.
+views/LandingPage.tsx(2,93): error TS6133: 'ArrowRight' is declared but its value is never read.
+views/LandingPage.tsx(169,37): error TS6133: 'index' is declared but its value is never read.

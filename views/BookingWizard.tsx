@@ -5,6 +5,13 @@ import { dataService } from '../services/dataService';
 import { logger } from '../utils/logger';
 
 import { Button } from '../components/Button';
+import { createClient } from '@supabase/supabase-js';
+
+// Supabase client config (reused from LoginPage or imported)
+const supabase = createClient(
+    import.meta.env.VITE_SUPABASE_URL || '',
+    import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+);
 // @ts-ignore
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 // @ts-ignore
@@ -135,6 +142,42 @@ const BookingWizard: React.FC<Props> = ({ onBack }) => {
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
         setSelectedSessions([{ date: tomorrow.toISOString().split('T')[0], time: null }]);
+
+        // Check for restored state after Google Login
+        const restoredStateStr = sessionStorage.getItem('bookingWizardState');
+        if (restoredStateStr) {
+            try {
+                const restored = JSON.parse(restoredStateStr);
+                // Clear state to avoid infinite loops
+                sessionStorage.removeItem('bookingWizardState');
+
+                // Restore values
+                if (restored.selectedService) setSelectedService(restored.selectedService);
+                if (restored.selectedBranch) setSelectedBranch(restored.selectedBranch);
+                if (restored.selectedSessions) setSelectedSessions(restored.selectedSessions);
+                if (restored.selectedEmployee) setSelectedEmployee(restored.selectedEmployee);
+
+                // Fetch user data from supabase
+                supabase.auth.getSession().then(({ data: { session } }) => {
+                    if (session && session.user) {
+                        setClientEmail(session.user.email || '');
+                        setClientName(session.user.user_metadata?.full_name || session.user.user_metadata?.name || '');
+                        // If we have an existing client by email, fetch phone
+                        dataService.getClients().then(clients => {
+                            const existing = clients.find(c => c.email.toLowerCase() === session.user.email?.toLowerCase());
+                            if (existing) {
+                                setClientPhone(existing.phone);
+                            }
+                        });
+                    }
+                });
+
+                // Go to step 5
+                setStep(5);
+            } catch (e) {
+                console.error("Failed to restore booking state", e);
+            }
+        }
     }, []);
 
     // Initialize sessions for the selected service
@@ -254,11 +297,46 @@ const BookingWizard: React.FC<Props> = ({ onBack }) => {
     };
 
     // --- Handlers ---
+    const handleGoogleLogin = async () => {
+        // Save current state
+        const stateToSave = {
+            selectedService,
+            selectedBranch,
+            selectedSessions,
+            selectedEmployee
+        };
+        sessionStorage.setItem('bookingWizardState', JSON.stringify(stateToSave));
+
+        const { error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+                redirectTo: `${window.location.origin}${window.location.pathname}?view=booking`,
+                queryParams: {
+                    access_type: 'offline',
+                    prompt: 'consent',
+                }
+            }
+        });
+
+        if (error) {
+            console.error('Google login error', error);
+            logger.error('BookingWizard', 'Error in Google login', { error });
+            sessionStorage.removeItem('bookingWizardState');
+        }
+    };
+
     const handleFinalBooking = async () => {
         if (!selectedBranch || !selectedEmployee || !selectedService || selectedSessions.some(s => s.time === null)) return;
         logger.info('BookingWizard', 'Attempting booking', { branchId: selectedBranch.id, employeeId: selectedEmployee.id, serviceId: selectedService.id, sessions: selectedSessions });
         try {
-            const client = await dataService.getOrCreateClient(clientName, clientEmail, clientPhone);
+            // Get user session if logged in
+            let auth_user_id = undefined;
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user) {
+                auth_user_id = session.user.id;
+            }
+
+            const client = await dataService.getOrCreateClient(clientName, clientEmail, clientPhone, auth_user_id);
             await Promise.all(selectedSessions.map(sess =>
                 dataService.addAppointment({
                     branchId: selectedBranch!.id,
@@ -577,6 +655,30 @@ const BookingWizard: React.FC<Props> = ({ onBack }) => {
                 <h2 className="text-2xl font-bold text-gray-900">Tus Datos</h2>
                 <p className="text-gray-500 text-sm">Solo falta este paso para confirmar.</p>
             </div>
+
+            {!clientEmail && (
+                <div className="bg-gradient-to-br from-indigo-50 to-white p-5 rounded-2xl border border-indigo-100 shadow-sm mb-4">
+                    <p className="text-sm text-gray-700 mb-3 font-medium">¿Ya tienes cuenta o quieres acelerar el proceso?</p>
+                    <button
+                        onClick={handleGoogleLogin}
+                        className="w-full flex items-center justify-center gap-3 bg-white border-2 border-gray-200 text-gray-700 font-bold py-3 px-4 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 shadow-sm"
+                    >
+                        <svg width="20" height="20" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                            <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z" />
+                            <path fill="#FF3D00" d="m6.306 14.691 6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z" />
+                            <path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z" />
+                            <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z" />
+                        </svg>
+                        Continuar con Google
+                    </button>
+
+                    <div className="flex items-center gap-3 my-4">
+                        <div className="flex-1 h-px bg-gray-200" />
+                        <span className="text-xs text-gray-400 font-medium">O CONTINUA MANUALMENTE</span>
+                        <div className="flex-1 h-px bg-gray-200" />
+                    </div>
+                </div>
+            )}
 
             <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-4">
                 {/* Summary Card */}

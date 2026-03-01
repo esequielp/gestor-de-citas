@@ -30,8 +30,12 @@
     "services",
     "components",
     "utils",
-    "*.ts",
-    "*.tsx"
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "views/**/*.tsx",
+    "App.tsx",
+    "main.tsx",
+    "index.tsx"
   ],
   "references": [
     {

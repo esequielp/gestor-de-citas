@@ -200,6 +200,20 @@ const templates = {
       <p style="color: #6b7280; font-size: 13px; margin-top: 24px;">¡Gracias por confiar en nosotros! 🙏</p>
     </div>
   `, data.companyName),
+
+  // 9. Pedir testimonio
+  askForTestimonial: (data: { clientName: string; serviceName: string; companyName: string }) => baseLayout(`
+    <div class="body">
+      <h2>¡Nos encantaría conocer tu opinión! ⭐</h2>
+      <p>Hola <strong>${data.clientName}</strong>,</p>
+      <p>Esperamos que hayas disfrutado tu reciente sesión de <strong>${data.serviceName}</strong>.</p>
+      <p>Tu opinión es fundamental para ayudarnos a mejorar y para disfrutar de la experiencia. Te invitamos a dejarnos un breve testimonio ingresando a tu perfil en nuestra plataforma.</p>
+      <div style="text-align: center; margin: 24px 0;">
+        <p>Visita nuestro sitio web e inicia sesión para dejar tu reseña.</p>
+      </div>
+      <p>¡Muchas gracias por elegir ${data.companyName}!</p>
+    </div>
+  `, data.companyName),
 };
 
 // ─── Types ──────────────────────────────────────────────────────
@@ -371,6 +385,27 @@ export const emailService = {
         return { success: false, error };
       }
       console.log('✅ Contact reply email sent to', data.email, ':', result?.id);
+      return { success: true, id: result?.id };
+    } catch (e) {
+      console.error('❌ Email service error:', e);
+      return { success: false, error: e };
+    }
+  },
+
+  async sendTestimonialRequest(data: { email: string; clientName: string; serviceName: string; companyName: string }) {
+    try {
+      if (!data.email) return { success: false, error: 'No email' };
+      const { data: result, error } = await resend.emails.send({
+        from: FROM_EMAIL,
+        to: [data.email],
+        subject: `¿Qué te pareció tu cita de ${data.serviceName} en ${data.companyName}?`,
+        html: templates.askForTestimonial(data),
+      });
+      if (error) {
+        console.error('❌ Error sending testimonial request email:', error);
+        return { success: false, error };
+      }
+      console.log('✅ Testimonial request email sent to', data.email);
       return { success: true, id: result?.id };
     } catch (e) {
       console.error('❌ Email service error:', e);

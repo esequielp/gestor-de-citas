@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar as CalendarIcon, Users, MapPin, LogOut, Clock, X, Link as LinkIcon, Plus, Trash2, CheckCircle, Sparkles, Scissors, Edit2, DollarSign, Activity, ChevronLeft, ChevronRight, List, User, Phone, Mail, History, LayoutDashboard, TrendingUp, AlertCircle, CalendarClock, Settings, Bell, Zap, MessageCircle, MessageSquare, Send, Bot, Loader2, Globe, Search, Paperclip, Image, FileText, Mic, Download, Square, Menu } from 'lucide-react';
+import { Calendar as CalendarIcon, Users, MapPin, LogOut, Clock, X, Link as LinkIcon, Plus, Trash2, CheckCircle, Sparkles, Scissors, Edit2, DollarSign, Activity, ChevronLeft, ChevronRight, List, User, Phone, Mail, History, LayoutDashboard, TrendingUp, AlertCircle, CalendarClock, Settings, Bell, Zap, MessageCircle, MessageSquare, Send, Bot, Loader2, Globe, Search, Paperclip, Image, FileText, Mic, Download, Square, Menu, Star, RefreshCw } from 'lucide-react';
 import { dataService } from '../services/dataService';
 import apiClient from '../services/apiClient';
 import { Appointment, Branch, Employee, DaySchedule, TimeRange, Service, Client } from '../types';
@@ -49,7 +49,7 @@ interface Props {
     onLogout: () => void;
 }
 
-type Tab = 'DASHBOARD' | 'APPOINTMENTS' | 'CLIENTS' | 'EMPLOYEES' | 'BRANCHES' | 'SERVICES' | 'SETTINGS' | 'MESSAGES';
+type Tab = 'DASHBOARD' | 'APPOINTMENTS' | 'CLIENTS' | 'EMPLOYEES' | 'BRANCHES' | 'SERVICES' | 'TESTIMONIALS' | 'SETTINGS' | 'MESSAGES';
 type ViewMode = 'LIST' | 'CALENDAR';
 type SettingsSubTab = 'PROFILE' | 'CHATBOT' | 'WHATSAPP' | 'REMINDERS';
 
@@ -207,6 +207,11 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
     const [clientSearch, setClientSearch] = useState('');
     const [employeeSearch, setEmployeeSearch] = useState('');
     const [serviceSearch, setServiceSearch] = useState('');
+
+    // Testimonials State
+    const [testimonials, setTestimonials] = useState<any[]>([]);
+    const [loadingTestimonials, setLoadingTestimonials] = useState(false);
+    const [unreadTestimonialCount, setUnreadTestimonialCount] = useState(0);
 
     // Settings State
     const [businessProfile, setBusinessProfile] = useState({
@@ -400,6 +405,30 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
         }
     }, [activeTab]);
 
+    // Fetch Testimonials when tab is active
+    useEffect(() => {
+        if (activeTab === 'TESTIMONIALS') {
+            loadTestimonials();
+        }
+    }, [activeTab]);
+
+    const loadTestimonials = async () => {
+        try {
+            setLoadingTestimonials(true);
+            const data = await dataService.getAllAdminTestimonials();
+            setTestimonials(data || []);
+
+            // Count ones that are not approved yet (pending)
+            const pending = (data || []).filter((t: any) => !t.is_approved).length;
+            setUnreadTestimonialCount(pending);
+        } catch (error) {
+            console.error("Error loading testimonials", error);
+            showToast("Error al cargar testimonios", "error");
+        } finally {
+            setLoadingTestimonials(false);
+        }
+    };
+
     // Messages Logic
     useEffect(() => {
         if (activeTab === 'MESSAGES') {
@@ -420,11 +449,16 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
         }
     };
 
-    // Polling for new messages and chat list
+    // Polling for new messages and testimonials
     useEffect(() => {
         const interval = setInterval(() => {
             loadChats();
-        }, 10000); // Every 10 seconds for the general list
+            // Also refresh unread testimonials count periodically
+            dataService.getAllAdminTestimonials().then(data => {
+                const pending = (data || []).filter((t: any) => !t.is_approved).length;
+                setUnreadTestimonialCount(pending);
+            }).catch(() => { });
+        }, 30000); // 30s
         return () => clearInterval(interval);
     }, []);
 
@@ -1325,6 +1359,7 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                         { id: 'SERVICES', icon: Scissors, label: 'Servicios' },
                         { id: 'EMPLOYEES', icon: User, label: 'Empleados' },
                         { id: 'BRANCHES', icon: MapPin, label: 'Sucursales' },
+                        { id: 'TESTIMONIALS', icon: Star, label: 'Testimonios', badge: unreadTestimonialCount },
                         { id: 'MESSAGES', icon: MessageSquare, label: 'Mensajes', badge: unreadMsgCount },
                         { id: 'SETTINGS', icon: Settings, label: 'Configuración' }
                     ].map((item: any) => (
@@ -2502,6 +2537,82 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
         </div>
     );
 
+    const renderTestimonialsTab = () => (
+        <div className="space-y-6 animate-fade-in">
+            <div className="flex justify-between items-center sm:flex-row flex-col gap-4">
+                <h2 className="text-2xl font-bold text-gray-800">Gestionar Testimonios</h2>
+                <div className="flex gap-2 w-full sm:w-auto">
+                    <Button size="sm" onClick={loadTestimonials} disabled={loadingTestimonials} className="whitespace-nowrap">
+                        {loadingTestimonials ? <Loader2 size={16} className="animate-spin mr-2" /> : <RefreshCw size={16} className="mr-2" />} Actualizar
+                    </Button>
+                </div>
+            </div>
+
+            {loadingTestimonials ? (
+                <div className="flex justify-center py-12"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>
+            ) : testimonials.length === 0 ? (
+                <div className="text-center py-12 text-gray-500 bg-white rounded-xl shadow-sm border border-gray-200">
+                    No hay testimonios registrados.
+                </div>
+            ) : (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    {testimonials.map(t => (
+                        <div key={t.id} className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 relative flex flex-col justify-between hover:shadow-md transition-shadow">
+                            <div>
+                                <div className="flex justify-between items-start mb-2">
+                                    <div className="flex items-center gap-2">
+                                        {t.client_image ? (
+                                            <img src={t.client_image} className="w-10 h-10 rounded-full object-cover border" alt={t.client_name} />
+                                        ) : (
+                                            <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-400">
+                                                <User size={20} />
+                                            </div>
+                                        )}
+                                        <div>
+                                            <h3 className="font-semibold text-gray-900 leading-tight">{t.client_name}</h3>
+                                            <div className="flex text-yellow-400 mt-1">
+                                                {[1, 2, 3, 4, 5].map(i => <Star key={i} size={12} className={i <= (t.rating || 5) ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'} />)}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${t.is_approved ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                                        {t.is_approved ? 'Aprobado' : 'Pendiente'}
+                                    </span>
+                                </div>
+                                <p className="text-sm text-gray-600 italic mt-3">"{t.text}"</p>
+                                <p className="text-xs text-gray-400 mt-2">{new Date(t.created_at).toLocaleDateString()}</p>
+                            </div>
+                            <div className="mt-4 pt-4 border-t border-gray-100 flex justify-end gap-2">
+                                <button
+                                    onClick={() => {
+                                        dataService.approveTestimonial(t.id, !t.is_approved)
+                                            .then(() => { showToast(t.is_approved ? 'Testimonio ocultado' : 'Testimonio aprobado', 'success'); loadTestimonials(); })
+                                            .catch(() => showToast('Error al procesar testimonio', 'error'));
+                                    }}
+                                    className={`px-3 py-1.5 rounded text-xs font-bold transition-colors shadow-sm ${t.is_approved ? 'bg-amber-50 text-amber-600 hover:bg-amber-100 border border-amber-200' : 'bg-green-50 text-green-600 hover:bg-green-100 border border-green-200'}`}
+                                >
+                                    {t.is_approved ? 'Ocultar' : 'Aprobar'}
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        showConfirm('¿Eliminar este testimonio permanentemente?', () => {
+                                            dataService.deleteTestimonial(t.id)
+                                                .then(() => { showToast('Testimonio eliminado', 'success'); loadTestimonials(); })
+                                                .catch(() => showToast('Error al eliminar', 'error'));
+                                        });
+                                    }}
+                                    className="px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded text-xs font-bold hover:bg-red-100 transition-colors shadow-sm"
+                                >
+                                    Eliminar
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+
     const renderScheduleEditor = () => {
         if (!editingEmployee) return null;
         const currentDay = getCurrentDaySchedule();
@@ -3314,6 +3425,7 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                 {activeTab === 'SERVICES' && renderServices()}
                 {activeTab === 'EMPLOYEES' && renderEmployees()}
                 {activeTab === 'BRANCHES' && renderBranches()}
+                {activeTab === 'TESTIMONIALS' && renderTestimonialsTab()}
                 {activeTab === 'SETTINGS' && renderSettings()}
                 {activeTab === 'MESSAGES' && renderMessages()}
             </main>

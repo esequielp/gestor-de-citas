@@ -134,10 +134,9 @@ router.post('/webhook', async (req, res) => {
 
     console.log(`📩 Nuevo mensaje de ${senderName} (${from}) para ${recipientId}: ${msgBody}${mediaType ? ` [${mediaType}]` : ''}`);
 
-    // 1. Try to find the client to get the tenant
     let { data: client } = await supabaseAdmin
         .from('clientes')
-        .select('id, empresa_id')
+        .select('id, empresa_id, nombre')
         .ilike('telefono', `%${from}%`)
         .limit(1)
         .single();
@@ -155,13 +154,6 @@ router.post('/webhook', async (req, res) => {
 
         if (config) {
             empresaId = config.empresa_id;
-            // Auto-create client with WA Name
-            const { data: newClient } = await supabaseAdmin.from('clientes').insert([{
-                empresa_id: empresaId,
-                nombre: senderName,
-                telefono: from
-            }]).select().single();
-            client = newClient;
         }
     }
 
@@ -169,6 +161,16 @@ router.post('/webhook', async (req, res) => {
     if (!empresaId) {
         const { data: firstEmpresa } = await supabaseAdmin.from('empresas').select('id').limit(1).single();
         empresaId = firstEmpresa?.id;
+    }
+
+    // 4. If we have a tenant but no client, create the client automatically
+    if (empresaId && !client) {
+        const { data: newClient } = await supabaseAdmin.from('clientes').insert([{
+            empresa_id: empresaId,
+            nombre: senderName,
+            telefono: from
+        }]).select().single();
+        client = newClient;
     }
 
     if (empresaId) {

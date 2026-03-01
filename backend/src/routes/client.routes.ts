@@ -22,7 +22,7 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   const tenantId = getTenantId(req);
-  const { name, email, phone } = req.body;
+  const { name, email, phone, auth_user_id } = req.body;
 
   try {
     // Check if exists
@@ -35,9 +35,12 @@ router.post('/', async (req, res) => {
 
     let client;
     if (existing) {
+      const updateData: any = { nombre: name, telefono: phone };
+      if (auth_user_id) updateData.auth_user_id = auth_user_id;
+
       const { data, error } = await supabaseAdmin
         .from('clientes')
-        .update({ nombre: name, telefono: phone })
+        .update(updateData)
         .eq('id', existing.id)
         .select()
         .single();
@@ -46,7 +49,7 @@ router.post('/', async (req, res) => {
     } else {
       const { data, error } = await supabaseAdmin
         .from('clientes')
-        .insert([{ empresa_id: tenantId, nombre: name, email, telefono: phone }])
+        .insert([{ empresa_id: tenantId, nombre: name, email, telefono: phone, auth_user_id }])
         .select()
         .single();
       if (error) throw error;
@@ -78,11 +81,14 @@ router.get('/:id', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   const tenantId = getTenantId(req);
-  const { name, email, phone } = req.body;
+  const { name, email, phone, auth_user_id } = req.body;
+
+  const updateData: any = { nombre: name, email, telefono: phone };
+  if (auth_user_id) updateData.auth_user_id = auth_user_id;
 
   const { data: client, error } = await supabaseAdmin
     .from('clientes')
-    .update({ nombre: name, email, telefono: phone })
+    .update(updateData)
     .eq('id', req.params.id)
     .eq('empresa_id', tenantId)
     .select()

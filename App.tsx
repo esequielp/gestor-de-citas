@@ -7,6 +7,8 @@ import B2BLandingPage from './views/B2BLandingPage';
 import LoginPage from './views/LoginPage';
 import ChatWidget from './src/components/chat/ChatWidget';
 import ServiceDetailsPage from './views/ServiceDetailsPage';
+import ClientProfile from './views/ClientProfile';
+import EmployeeDashboard from './views/EmployeeDashboard';
 
 // Default tenant for vegano demo
 const VEGANO_TENANT_ID = 'eb1a20ab-d82e-4d2c-ac34-64ecb0afb161';
@@ -92,12 +94,16 @@ const App: React.FC = () => {
       case 'ADMIN_LOGIN':
         return (
           <LoginPage
-            onSuccess={() => setView('ADMIN_DASHBOARD')}
+            onSuccess={(targetView?: ViewState) => setView(targetView || 'ADMIN_DASHBOARD')}
             onBack={handleGoHome}
           />
         );
       case 'ADMIN_DASHBOARD':
         return <AdminDashboard onLogout={handleLogout} />;
+      case 'CLIENT_PROFILE':
+        return <ClientProfile onLogout={handleLogout} onBack={handleGoHome} />;
+      case 'EMPLOYEE_DASHBOARD':
+        return <EmployeeDashboard onLogout={handleLogout} />;
       default:
         return <div>Error: Vista desconocida</div>;
     }

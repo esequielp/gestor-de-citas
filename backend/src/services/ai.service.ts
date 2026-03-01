@@ -310,12 +310,17 @@ REGLAS DE RESPUESTA Y COMPORTAMIENTO:
                 { role: 'user', content: userContent }
             ];
 
-            let response = await openai.chat.completions.create({
+            let payload: any = {
                 model: AI_MODEL,
                 messages,
-                tools: envContext ? (aiToolsDefinition as any) : undefined,
-                tool_choice: envContext ? "auto" : "none",
-            });
+            };
+
+            if (envContext) {
+                payload.tools = aiToolsDefinition;
+                payload.tool_choice = "auto";
+            }
+
+            let response = await openai.chat.completions.create(payload);
 
             const responseMessage = response.choices[0].message;
 

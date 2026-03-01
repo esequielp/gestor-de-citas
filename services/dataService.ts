@@ -47,13 +47,21 @@ class DataService {
     return res.data;
   }
 
-  async getOrCreateClient(name: string, email: string, phone: string): Promise<Client> {
+  async getOrCreateClient(name: string, email: string, phone: string, auth_user_id?: string): Promise<Client> {
     // Search by email
     const clients = await this.getClients();
     const existing = clients.find(c => c.email.toLowerCase() === email.toLowerCase());
-    if (existing) return existing;
 
-    return this.addClient({ name, email, phone });
+    if (existing) {
+      // If they just logged in with Google, we should link the auth_user_id
+      if (auth_user_id && !existing.auth_user_id) {
+        existing.auth_user_id = auth_user_id;
+        await this.updateClient(existing);
+      }
+      return existing;
+    }
+
+    return this.addClient({ name, email, phone, auth_user_id });
   }
 
   // --- Services ---
@@ -282,6 +290,36 @@ class DataService {
     const res = await apiClient.get('/whatsapp/unread-count');
     return res.data.count || 0;
   }
+  // --- Testimonials ---
+  async getTestimonials(): Promise<any[]> {
+    const res = await apiClient.get('/testimonials');
+    return res.data;
+  }
+
+  async getAllAdminTestimonials(): Promise<any[]> {
+    const res = await apiClient.get('/testimonials/admin');
+    return res.data;
+  }
+
+  async addTestimonial(data: { client_name: string, client_image?: string, text: string, rating: number }): Promise<any> {
+    const res = await apiClient.post('/testimonials', data);
+    return res.data;
+  }
+
+  async approveTestimonial(id: string, is_approved: boolean): Promise<any> {
+    const res = await apiClient.put(`/testimonials/${id}/approve`, { is_approved });
+    return res.data;
+  }
+
+  async deleteTestimonial(id: string): Promise<boolean> {
+    try {
+      await apiClient.delete(`/testimonials/${id}`);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
 }
 
 export const dataService = new DataService();
