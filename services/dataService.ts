@@ -50,7 +50,7 @@ class DataService {
   async getOrCreateClient(name: string, email: string, phone: string, auth_user_id?: string): Promise<Client> {
     // Search by email
     const clients = await this.getClients();
-    const existing = clients.find(c => c.email.toLowerCase() === email.toLowerCase());
+    const existing = clients.find(c => c.email && c.email.toLowerCase() === email.toLowerCase());
 
     if (existing) {
       // If they just logged in with Google, we should link the auth_user_id

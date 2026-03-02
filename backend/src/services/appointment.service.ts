@@ -199,12 +199,22 @@ export const appointmentService = {
       const slots = await this.getAvailableSlots(data.tenantId, data.branchId, data.serviceId, data.date);
       const matchingSlot = slots.find(s => s.minutesFromMidnight === data.time);
 
+      backendLogger.info('AppointmentService', 'create debug', {
+        requestedTime: data.time,
+        requestedEmployeeId: finalEmployeeId,
+        slotsFound: slots.length,
+        matchingSlot
+      });
+
       if (data.employeeId === 'any' && matchingSlot && matchingSlot.availableEmployeeIds.length > 0) {
         finalEmployeeId = matchingSlot.availableEmployeeIds[Math.floor(Math.random() * matchingSlot.availableEmployeeIds.length)];
       }
 
       const isAvailable = matchingSlot && matchingSlot.availableEmployeeIds.includes(finalEmployeeId);
       if (!isAvailable) {
+        backendLogger.error('AppointmentService', 'SLOT_TAKEN debug', {
+          isAvailable, finalEmployeeId, matchingSlot
+        });
         throw new Error("SLOT_TAKEN: El horario está ocupado o no hay disponibilidad.");
       }
     } else if (finalEmployeeId === 'any') {

@@ -24,7 +24,7 @@ describe('AI Service', () => {
         process.env.OPENAI_API_KEY = 'test-key';
     });
 
-    it('should improve description using gpt-5-mini', async () => {
+    it('should improve description using gpt-4o-mini', async () => {
         mocks.create.mockResolvedValueOnce({
             choices: [{ message: { content: 'Descripción mejorada.' } }]
         });
@@ -33,7 +33,7 @@ describe('AI Service', () => {
 
         expect(result).toBe('Descripción mejorada.');
         expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
-            model: 'gpt-5-mini'
+            model: 'gpt-4o-mini'
         }));
     });
 
@@ -60,5 +60,54 @@ describe('AI Service', () => {
 
         expect(result.serviceId).toBeNull();
         expect(result.explanation).toContain('no pude parsear JSON');
+    });
+
+    it('should generate a response invoking AI tools and returning the second completion result', async () => {
+        // Mock the first choice containing a tool call
+        const mockToolCall = {
+            id: 'call_123',
+            type: 'function',
+            function: { name: 'consultar_disponibilidad', arguments: '{}' }
+        };
+
+        const firstResponse = {
+            choices: [{
+                message: {
+                    content: null,
+                    tool_calls: [mockToolCall]
+                }
+            }]
+        };
+
+        const secondResponse = {
+            choices: [{
+                message: { content: 'Tengo este horario para ti: 10:00' }
+            }]
+        };
+
+        // Enqueue responses
+        mocks.create
+            .mockResolvedValueOnce(firstResponse)
+            .mockResolvedValueOnce(secondResponse);
+
+        // We also mock the dependency of executeAiTool
+        const aiToolsMock = await import('./ai.tools');
+        vi.spyOn(aiToolsMock, 'executeAiTool').mockResolvedValueOnce(JSON.stringify({ slots: ['10:00'] }));
+
+        const services = [{ id: '1', name: 'Barba', description: '', price: 10, duration: 30 }];
+        const result = await aiService.generateResponse(
+            'Quiero agendar',
+            [],
+            services,
+            {},
+            undefined,
+            { tenantId: '1', clientId: '2', clientName: 'Juan' }
+        );
+
+        expect(aiToolsMock.executeAiTool).toHaveBeenCalledWith(mockToolCall, expect.objectContaining({
+            tenantId: '1',
+            clientId: '2'
+        }));
+        expect(result).toBe('Tengo este horario para ti: 10:00');
     });
 });

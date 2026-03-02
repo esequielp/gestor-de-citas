@@ -524,6 +524,52 @@ router.post('/send', requireTenant, async (req, res) => {
     }
 });
 
+// API to list approved whatsapp templates
+router.get('/templates', requireTenant, async (req, res) => {
+    try {
+        const tenantId = getTenantId(req);
+        const result = await whatsappService.getTemplates(tenantId);
+
+        if (result.success) {
+            res.json(result.data);
+        } else {
+            res.status(500).json({ error: result.error });
+        }
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// API to manually send a template
+router.post('/send-template-manual', requireTenant, async (req, res) => {
+    try {
+        const { clientId, phone, templateName, languageCode, components } = req.body;
+        const tenantId = getTenantId(req);
+
+        if (!phone || !templateName) {
+            return res.status(400).json({ error: 'phone y templateName son requeridos.' });
+        }
+
+        const result = await whatsappService.sendTemplate(
+            phone,
+            templateName,
+            languageCode || 'es',
+            components || [],
+            tenantId,
+            clientId
+        );
+
+        if (result.success) {
+            res.json({ success: true });
+        } else {
+            res.status(500).json({ error: result.error });
+        }
+
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // API to toggle AI intervention for a client
 router.post('/ai-toggle/:identifier', requireTenant, async (req, res) => {
     const { identifier } = req.params;

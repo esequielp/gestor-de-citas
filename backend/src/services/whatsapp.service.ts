@@ -9,7 +9,7 @@ const WINDOW_HOURS = 24; // WhatsApp Business conversation window
 async function getCredentials(empresaId: string) {
     const { data: config } = await supabaseAdmin
         .from('configuraciones')
-        .select('wa_phone_number_id, wa_access_token, wa_template_name')
+        .select('wa_phone_number_id, wa_access_token, wa_template_name, wa_business_account_id')
         .eq('empresa_id', empresaId)
         .single();
 
@@ -17,6 +17,7 @@ async function getCredentials(empresaId: string) {
         phoneNumberId: config?.wa_phone_number_id || process.env.WHATSAPP_PHONE_NUMBER_ID,
         accessToken: config?.wa_access_token || process.env.WHATSAPP_ACCESS_TOKEN,
         templateName: config?.wa_template_name || 'recordatorio_cita',
+        businessAccountId: config?.wa_business_account_id || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID,
     };
 }
 
@@ -537,6 +538,42 @@ export const whatsappService = {
         } catch (error: any) {
             console.error('❌ sendVideo error:', error);
             return { success: false, error: error.message };
+        }
+    },
+
+    /**
+     * Get approved templates from Meta WhatsApp Business Account
+     */
+    async getTemplates(empresaId: string): Promise<{ success: boolean; data?: any[]; error?: string }> {
+        const { businessAccountId, accessToken } = await getCredentials(empresaId);
+
+        if (!businessAccountId || !accessToken) {
+            return { success: false, error: 'businessAccountId o accessToken no configurados' };
+        }
+
+        try {
+            console.log(`📥 Fetching templates for WABA: ${businessAccountId}`);
+            const response = await fetch(`https://graph.facebook.com/${VERSION}/${businessAccountId}/message_templates`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                }
+            });
+
+            const responseData: any = await response.json();
+
+            if (responseData.data) {
+                // Filter only approved templates to avoid sending templates that fail
+                const approvedTemplates = responseData.data.filter((tpl: any) => tpl.status === 'APPROVED');
+                return { success: true, data: approvedTemplates };
+            } else {
+                console.error('❌ Fetch templates error from Meta:', JSON.stringify(responseData, null, 2));
+                return { success: false, error: responseData.error?.message || 'Error fetching templates' };
+            }
+        } catch (error: any) {
+            console.error('❌ Fetch templates error:', error);
+            return { success: false, error: error.message || 'Error de conexión con WhatsApp' };
         }
     }
 };

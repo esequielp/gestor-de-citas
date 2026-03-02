@@ -110,4 +110,38 @@ describe('AI Tools (executeAiTool)', () => {
         expect(response.message).toBe("Cita agendada exitosamente");
         expect(response.cita_id).toBe("new-cita-id");
     });
+
+    it('should handle SLOT_TAKEN error when booking an appointment', async () => {
+        const toolCall = {
+            function: {
+                name: 'agendar_cita',
+                arguments: JSON.stringify({ serviceName: 'Barba', date: '2026-03-02', timeString: '14:30' })
+            }
+        };
+
+        (appointmentService.create as any).mockRejectedValue(new Error('SLOT_TAKEN'));
+
+        const responseString = await executeAiTool(toolCall, mockContext);
+        const response = JSON.parse(responseString);
+
+        expect(response.error).toBe("El horario ya no está disponible, pide al cliente que elija otro.");
+    });
+
+    it('should cancel an appointment successfully', async () => {
+        const toolCall = {
+            function: {
+                name: 'cancelar_cita',
+                arguments: JSON.stringify({ appointmentId: 'cita-123' })
+            }
+        };
+
+        // For canceling, appointmentService.delete needs to be mocked if it isn't already
+        appointmentService.delete = vi.fn().mockResolvedValue(true);
+
+        const responseString = await executeAiTool(toolCall, mockContext);
+        const response = JSON.parse(responseString);
+
+        expect(appointmentService.delete).toHaveBeenCalledWith('tenant-123', 'cita-123');
+        expect(response.message).toBe("Cita cancelada con éxito.");
+    });
 });

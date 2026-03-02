@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar as CalendarIcon, Users, MapPin, LogOut, Clock, X, Link as LinkIcon, Plus, Trash2, CheckCircle, Sparkles, Scissors, Edit2, DollarSign, Activity, ChevronLeft, ChevronRight, List, User, Phone, Mail, History, LayoutDashboard, TrendingUp, AlertCircle, CalendarClock, Settings, Bell, Zap, MessageCircle, MessageSquare, Send, Bot, Loader2, Globe, Search, Paperclip, Image, FileText, Mic, Download, Square, Menu, Star, RefreshCw } from 'lucide-react';
+import { Calendar as CalendarIcon, Users, MapPin, LogOut, Clock, X, Link as LinkIcon, Plus, Trash2, CheckCircle, Sparkles, Scissors, Edit2, DollarSign, Activity, ChevronLeft, ChevronRight, List, User, Phone, Mail, History, LayoutDashboard, TrendingUp, AlertCircle, CalendarClock, Settings, Bell, Zap, MessageCircle, MessageSquare, Send, Bot, Loader2, Globe, Search, Paperclip, Image, FileText, Mic, Download, Square, Menu, Star, RefreshCw, ClipboardList } from 'lucide-react';
 import { dataService } from '../services/dataService';
 import apiClient from '../services/apiClient';
 import { Appointment, Branch, Employee, DaySchedule, TimeRange, Service, Client } from '../types';
@@ -171,6 +171,69 @@ const ReminderInputList = ({ label, value, onChange }: { label: string, value: s
     );
 };
 
+const WhatsAppDocs = () => {
+    return (
+        <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-6 rounded-2xl border border-green-100 space-y-6 shadow-sm">
+            <div className="flex items-center gap-3 border-b border-green-200 pb-4">
+                <div className="p-2 bg-green-600 rounded-lg text-white">
+                    <Zap size={24} />
+                </div>
+                <div>
+                    <h3 className="text-xl font-bold text-gray-900">Guía de Configuración WhatsApp</h3>
+                    <p className="text-sm text-gray-600">Configura tu conexión y plantillas en minutos</p>
+                </div>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                    <h4 className="font-bold text-green-900 flex items-center gap-2">
+                        <CheckCircle size={18} /> 1. Registro en Alsheep AI
+                    </h4>
+                    <p className="text-sm text-gray-700">Para una integración mucho más sencilla, utilizamos <b>Alsheep AI</b> como proveedor certificado de Meta.</p>
+                    <ul className="text-sm text-gray-700 space-y-2 list-disc pl-5">
+                        <li>Crea una cuenta en <a href="https://alsheepai.com/" target="_blank" className="text-green-600 font-bold underline hover:text-green-700">alsheepai.com</a>.</li>
+                        <li>Escanea el código QR para vincular tu número de WhatsApp Business.</li>
+                        <li>Copia los IDs solicitados abajo (Phone ID, WABA ID y Token) desde tu panel de Alsheep.</li>
+                    </ul>
+                </div>
+
+                <div className="space-y-4">
+                    <h4 className="font-bold text-green-900 flex items-center gap-2">
+                        <MessageSquare size={18} /> 2. Plantillas Necesarias
+                    </h4>
+                    <p className="text-sm text-gray-700">Debes crear estas 3 plantillas básicas en tu panel de Alsheep para que el sistema funcione correctamente:</p>
+
+                    <div className="space-y-2">
+                        <div className="bg-white p-2 rounded border border-green-100 shadow-sm text-[11px]">
+                            <b className="text-green-700">RECONEXIÓN:</b> <code className="text-gray-500 italic block mt-1">"Hola {'{{1}}'}, tu chat se ha cerrado. Haz clic en el botón para continuar nuestra conversación."</code>
+                        </div>
+                        <div className="bg-white p-2 rounded border border-green-100 shadow-sm text-[11px]">
+                            <b className="text-green-700">RECORDATORIO:</b> <code className="text-gray-500 italic block mt-1">"Hola {'{{1}}'}, te recordamos tu cita de {'{{2}}'} para el día {'{{3}}'} a las {'{{4}}'}. ¡Saludos!"</code>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="bg-white/60 p-4 rounded-xl border border-green-200">
+                <h4 className="font-bold text-gray-900 mb-2 flex items-center gap-2 text-sm">
+                    <AlertCircle size={18} className="text-amber-600" /> Tips para Plantillas
+                </h4>
+                <div className="grid md:grid-cols-3 gap-4 text-xs text-gray-600">
+                    <div className="p-3 bg-amber-50 rounded-lg border border-amber-100">
+                        <b>Variables (Corchetes):</b> El sistema detectará automáticamente cada {'{{n}}'} y te pedirá el valor antes de enviar.
+                    </div>
+                    <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                        <b>Categoría:</b> Selecciona siempre <b>"Utilidad (Utility)"</b> para asegurar que tus mensajes lleguen rápido.
+                    </div>
+                    <div className="p-3 bg-green-50 rounded-lg border border-green-100">
+                        <b>Nombre del Template:</b> Procura usar nombres en minúsculas y sin espacios (ej: <code>recordatorio_cita</code>).
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
     const [activeTab, setActiveTab] = useState<Tab>('DASHBOARD');
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -188,6 +251,14 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
     const [isSendingMessage, setIsSendingMessage] = useState(false);
     const [chatFilter, setChatFilter] = useState<'ALL' | 'WHATSAPP' | 'WEB_CHAT' | 'WEB_CONTACT'>('ALL');
     const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    // WhatsApp Templates State
+    const [showTemplateModal, setShowTemplateModal] = useState(false);
+    const [templates, setTemplates] = useState<any[]>([]);
+    const [selectedTemplate, setSelectedTemplate] = useState<any | null>(null);
+    const [templateVariables, setTemplateVariables] = useState<string[]>([]);
+    const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+    const [templateSearch, setTemplateSearch] = useState('');
     // Voice recording state
     const [isRecording, setIsRecording] = useState(false);
     const [recordingDuration, setRecordingDuration] = useState(0);
@@ -624,6 +695,83 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
         return `${m}:${s}`;
     };
 
+    const openTemplateModal = async () => {
+        setIsLoadingTemplates(true);
+        setTemplateSearch('');
+        setShowTemplateModal(true);
+        try {
+            const res = await apiClient.get('/whatsapp/templates');
+            setTemplates(res.data);
+        } catch (e: any) {
+            showToast(e.response?.data?.error || 'Error al cargar plantillas', 'error');
+            setTemplates([]);
+        } finally {
+            setIsLoadingTemplates(false);
+        }
+    };
+
+    const countTemplateVariables = (template: any) => {
+        let maxVarIndex = 0;
+        template.components.forEach((comp: any) => {
+            if (comp.type === 'BODY' && comp.text) {
+                const matches = comp.text.match(/\{\{(\d+)\}\}/g);
+                if (matches) {
+                    matches.forEach((m: string) => {
+                        const num = parseInt(m.replace(/\{|\}/g, ''));
+                        if (num > maxVarIndex) maxVarIndex = num;
+                    });
+                }
+            }
+        });
+        return maxVarIndex;
+    };
+
+    const handleSelectTemplate = (template: any) => {
+        setSelectedTemplate(template);
+        const varsCount = countTemplateVariables(template);
+        setTemplateVariables(new Array(varsCount).fill(''));
+    };
+
+    const handleSendTemplate = async () => {
+        if (!selectedTemplate || !selectedChat) return;
+        setIsSendingMessage(true);
+        try {
+            const clientId = selectedChat.client_id || selectedChat.id;
+            const phone = selectedChat.telefono || '';
+
+            // Construir components parameters (META API schema)
+            const templateComponents = [];
+            if (templateVariables.length > 0) {
+                const parameters = templateVariables.map(val => ({
+                    type: "text",
+                    text: val
+                }));
+                templateComponents.push({
+                    type: "body",
+                    parameters
+                });
+            }
+
+            const payload = {
+                clientId,
+                phone,
+                templateName: selectedTemplate.name,
+                languageCode: selectedTemplate.language,
+                components: templateComponents
+            };
+
+            await apiClient.post('/whatsapp/send-template-manual', payload);
+            showToast('Plantilla enviada exitosamente', 'success');
+            setShowTemplateModal(false);
+            setSelectedTemplate(null);
+            await loadMessages(selectedChat.id);
+        } catch (e: any) {
+            showToast(e.response?.data?.error || 'Error al enviar la plantilla', 'error');
+        } finally {
+            setIsSendingMessage(false);
+        }
+    };
+
     const handleSendMessage = async () => {
         if (!newMessage.trim() || !selectedChat) return;
         setIsSendingMessage(true);
@@ -651,19 +799,27 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                 const clientId = selectedChat.client_id || selectedChat.id;
                 const phone = selectedChat.telefono || '';
 
-                await dataService.sendWhatsAppMessage(
+                const response = await dataService.sendWhatsAppMessage(
                     clientId,
                     phone,
                     newMessage,
                     tenantId,
                     via
                 );
+
+                if (response?.method === 'template') {
+                    showToast('Ventana de 24h cerrada. Se envió una plantilla (Template) en su lugar por políticas de WhatsApp.', 'info');
+                }
             }
 
             setNewMessage('');
             await loadMessages(selectedChat.id);
-        } catch (e) {
-            showToast('Error al enviar el mensaje', 'error');
+        } catch (e: any) {
+            if (e.response?.data?.windowClosed) {
+                showToast('Ventana de 24h cerrada. Debes configurar un Nombre de Template en Ajustes de WhatsApp para poder contactar al cliente.', 'error');
+            } else {
+                showToast('Error al enviar el mensaje', 'error');
+            }
         } finally {
             setIsSendingMessage(false);
         }
@@ -998,6 +1154,16 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                                                 >
                                                     <Paperclip size={18} />
                                                 </button>
+                                                {selectedChat.via === 'WHATSAPP' && (
+                                                    <button
+                                                        onClick={openTemplateModal}
+                                                        disabled={isSendingMessage}
+                                                        className="w-10 h-10 rounded-lg flex items-center justify-center text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors"
+                                                        title="Enviar Plantilla de Meta"
+                                                    >
+                                                        <ClipboardList size={18} />
+                                                    </button>
+                                                )}
                                             </>
                                         )}
                                         <input
@@ -1852,6 +2018,7 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
 
     const renderWhatsAppSettings = () => (
         <div className="space-y-6 animate-fade-in">
+            <WhatsAppDocs />
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
                 <div className="flex justify-between items-start mb-6">
                     <div>
@@ -1895,6 +2062,17 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
                             onChange={e => setWhatsappConfig({ ...whatsappConfig, accessToken: e.target.value })}
                             className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm"
                         />
+                    </div>
+                    <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Nombre del Template para ventana de 24h (Plantilla de Meta Whatsapp)</label>
+                        <input
+                            type="text"
+                            value={whatsappConfig.templateName}
+                            onChange={e => setWhatsappConfig({ ...whatsappConfig, templateName: e.target.value })}
+                            className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm"
+                            placeholder="Ej: recordatorio_cita"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Este template se envía automáticamente si intentas contestar pasadas las 24 horas del último mensaje del cliente. Asegúrate de crearlo en tu <a href="https://business.facebook.com/wa/manage/message-templates/" target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline">Administrador de WhatsApp</a> bajo la categoría "Marketing" o "Utility".</p>
                     </div>
                 </div>
 
@@ -3438,6 +3616,118 @@ const AdminDashboard: React.FC<Props> = ({ onLogout }) => {
             {renderAppointmentModal()}
             {renderClientModal()}
             {renderClientHistoryModal()}
+
+            {/* Template Modal */}
+            {showTemplateModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto space-y-5 border border-gray-100">
+                        <div className="flex justify-between items-center pb-3 border-b border-gray-100">
+                            <div>
+                                <h3 className="text-xl font-bold text-gray-900">Enviar Plantilla WA</h3>
+                                <p className="text-sm text-gray-500">Selecciona una plantilla aprobada por Meta</p>
+                            </div>
+                            <button onClick={() => { setShowTemplateModal(false); setSelectedTemplate(null); }} className="text-gray-400 hover:text-gray-600 bg-gray-50 hover:bg-gray-100 p-2 rounded-full transition-colors">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        {isLoadingTemplates ? (
+                            <div className="flex items-center justify-center p-8">
+                                <Loader2 className="animate-spin text-green-600 mb-4" size={32} />
+                                <span className="ml-2 text-gray-600">Cargando plantillas...</span>
+                            </div>
+                        ) : !selectedTemplate ? (
+                            <div className="space-y-4">
+                                <div className="relative">
+                                    <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
+                                    <input
+                                        type="text"
+                                        placeholder="Buscar plantilla por nombre o contenido..."
+                                        value={templateSearch}
+                                        onChange={(e) => setTemplateSearch(e.target.value)}
+                                        className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none text-sm transition-all shadow-sm"
+                                    />
+                                </div>
+
+                                <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1 custom-scrollbar">
+                                    {templates.filter(tpl =>
+                                        tpl.name.toLowerCase().includes(templateSearch.toLowerCase()) ||
+                                        (tpl.components.find((c: any) => c.type === 'BODY')?.text || '').toLowerCase().includes(templateSearch.toLowerCase())
+                                    ).length === 0 ? (
+                                        <div className="p-8 text-center bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                                            <p className="text-sm text-gray-500">No se encontraron plantillas que coincidan con tu búsqueda.</p>
+                                        </div>
+                                    ) : (
+                                        templates.filter(tpl =>
+                                            tpl.name.toLowerCase().includes(templateSearch.toLowerCase()) ||
+                                            (tpl.components.find((c: any) => c.type === 'BODY')?.text || '').toLowerCase().includes(templateSearch.toLowerCase())
+                                        ).map(tpl => (
+                                            <div
+                                                key={tpl.name}
+                                                onClick={() => handleSelectTemplate(tpl)}
+                                                className="p-4 border border-gray-100 rounded-xl hover:bg-green-50 hover:border-green-200 cursor-pointer transition-all hover:shadow-sm"
+                                            >
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <h4 className="font-bold text-gray-900">{tpl.name}</h4>
+                                                    <span className="text-[10px] font-bold px-2 py-0.5 bg-gray-100 text-gray-600 rounded uppercase tracking-wider">{tpl.category}</span>
+                                                </div>
+                                                <p className="text-sm text-gray-500 italic line-clamp-2 leading-relaxed">
+                                                    {tpl.components.find((c: any) => c.type === 'BODY')?.text || 'Sin texto principal'}
+                                                </p>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <span className="text-xs font-bold text-gray-500 uppercase">Previsualización</span>
+                                        <button onClick={() => setSelectedTemplate(null)} className="text-xs text-indigo-600 hover:underline">Volver a la lista</button>
+                                    </div>
+                                    <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                                        {selectedTemplate.components.find((c: any) => c.type === 'BODY')?.text}
+                                    </p>
+                                </div>
+
+                                {templateVariables.length > 0 && (
+                                    <div className="space-y-3">
+                                        <h4 className="text-sm font-bold text-gray-900 border-b pb-2">Variables de la plantilla</h4>
+                                        {templateVariables.map((val, idx) => (
+                                            <div key={idx}>
+                                                <label className="block text-xs font-medium text-gray-700 mb-1">Valor para {'{{'}{idx + 1}{'}}'}</label>
+                                                <input
+                                                    type="text"
+                                                    value={val}
+                                                    onChange={e => {
+                                                        const newVars = [...templateVariables];
+                                                        newVars[idx] = e.target.value;
+                                                        setTemplateVariables(newVars);
+                                                    }}
+                                                    className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none text-sm"
+                                                    placeholder={`Ej. Dato de la variable ${idx + 1}`}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                <div className="pt-4 flex justify-end gap-2 border-t border-gray-100">
+                                    <Button variant="secondary" onClick={() => { setShowTemplateModal(false); setSelectedTemplate(null); }}>Cancelar</Button>
+                                    <Button
+                                        onClick={handleSendTemplate}
+                                        disabled={isSendingMessage || templateVariables.some(v => v.trim() === '')}
+                                        className="bg-green-600 hover:bg-green-700 text-white"
+                                    >
+                                        {isSendingMessage ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} className="mr-2" />}
+                                        Enviar Plantilla
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* Toast Notification */}
             <div className={`fixed top-6 right-6 z-[100] transition-all duration-300 ${toast.visible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'}`}>
